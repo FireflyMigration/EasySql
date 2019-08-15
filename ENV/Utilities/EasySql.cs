@@ -24,20 +24,14 @@ namespace ENV.Utilities
     {
         string Build(SQLPartHelper helper);
     }
-    public class SqlFunction : ISqlPart
+    public class SqlFunction : SqlPart
     {
-        string _name;
-        object[] _args;
-        public SqlFunction(string name, params object[] args)
+        
+        public SqlFunction(string name, params object[] args):base(name,"(",new CommaSeparated(args),")")
         {
-            _name = name;
-            _args = args;
+            
         }
-        public string Build(SQLPartHelper helper)
-        {
-            var args = EasySql.CreateCommaSeprated(_args, helper);
-            return _name + " (" + args + ")";
-        }
+        
     }
     public class SqlPart : ISqlPart
     {
@@ -235,17 +229,17 @@ table tr:nth-of-type(odd) {
             }
             Windows.OSCommand(t);
         }
-        public static SqlPart Or(params object[] what)
+        public static ISqlPart Or(params object[] what)
         {
-            return new SqlPart(x => CreateCommaSeprated(what, x, " or ", true));
+            return new CommaSeparated(what, " or ", true);
         }
-        public static SqlPart And(params object[] what)
+        public static ISqlPart And(params object[] what)
         {
-            return new SqlPart(x => CreateCommaSeprated(what, x, " and ", true));
+            return new CommaSeparated(what, " and ", true);
         }
         public static SqlPart Distinct(params object[] column)
         {
-            return new SqlPart(x => "Distinct " + CreateCommaSeprated(column, x, ", ", false));
+            return new SqlPart( "Distinct " ,new CommaSeparated(column));
         }
 
 
@@ -298,31 +292,9 @@ table tr:nth-of-type(odd) {
         {
             return new SqlFunction("cast", new SqlPart(what, " as ", new SqlFunction("decimal", 20, decimals)));
         }
-        internal static string CreateCommaSeprated(object[] select, SQLPartHelper h, string seprator = ", ", bool addParents = false)
-        {
-            var selectString = "";
-            foreach (var item in select)
-            {
-                if (selectString.Length != 0)
-                    selectString += seprator;
-                string x;
+        
 
-                if (item is object[])
-                {
-                    x = CreateCommaSeprated((object[])item, h, seprator, addParents);
-                }
-                else
-                    x = h.Translate(item);
-                if (addParents)
-                {
-                    x = "(" + x + ")";
-                }
-                selectString += x;
-
-            }
-
-            return selectString;
-        }
+        
         
         public static SelectClass Select(params object[] columns)
         {
@@ -346,6 +318,7 @@ table tr:nth-of-type(odd) {
                 return new WhereClass(this, filter);
             }
         }
+        
         public class FromClass : SqlStatementKeywordBase
         {
 
@@ -446,7 +419,7 @@ table tr:nth-of-type(odd) {
                     {
                         helper.RegisterEntities(item.To);
                     }
-                var theFrom = EasySql.CreateCommaSeprated(_from.ToArray(), helper);
+                var theFrom = helper.Translate(new CommaSeparated(_from));
                 if (_joins != null)
                     foreach (var j in _joins)
                     {
@@ -454,16 +427,16 @@ table tr:nth-of-type(odd) {
 
                     }
 
-                string theWhere = EasySql.CreateCommaSeprated(_where.ToArray(), helper, " and ", true);
+                string theWhere = helper.Translate(And(_where.ToArray()));
                 if (theWhere != "")
                     theWhere = " Where " + theWhere;
 
-                var result = "Select " + EasySql.CreateCommaSeprated(_select.ToArray(), helper) +
+                var result = "Select " + helper.Translate(new CommaSeparated(_select)) +
                     " from " + theFrom +
                     theWhere;
                 if (_groupBy != null && _groupBy.Count> 0)
                 {
-                    result += " group by " + EasySql.CreateCommaSeprated(_groupBy.ToArray(), helper);
+                    result += " group by " + helper.Translate(new CommaSeparated(_groupBy));
                 }
 
 
@@ -513,6 +486,44 @@ table tr:nth-of-type(odd) {
             {
                 _orderBy.AddRange(orderBy);
             }
+        }
+    }
+    public class CommaSeparated : ISqlPart
+    {
+        System.Collections.IEnumerable  _what;
+        string _separator;
+        bool _addParenthesis;
+        public CommaSeparated(System.Collections.IEnumerable what, string separator = ", ", bool addParenthesis = false)
+        {
+            _what = what;
+            _separator = separator;
+            _addParenthesis = addParenthesis;
+        }
+        
+        public string Build(SQLPartHelper helper)
+        {
+            var selectString = "";
+            foreach (var item in _what)
+            {
+                if (selectString.Length != 0)
+                    selectString += _separator;
+                string x;
+
+                if (item is object[])
+                {
+                    x   = helper.Translate( new CommaSeparated((object[])item, _separator, _addParenthesis));
+                }
+                else
+                    x = helper.Translate(item);
+                if (_addParenthesis)
+                {
+                    x = "(" + x + ")";
+                }
+                selectString += x;
+
+            }
+
+            return selectString;
         }
     }
 
