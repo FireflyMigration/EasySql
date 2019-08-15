@@ -3,8 +3,8 @@ using Firefly.Box.Data;
 using Firefly.Box.Data.Advanced;
 using System;
 using System.Collections.Generic;
-using System.DirectoryServices;
 using System.Linq;
+using Firefly.Box;
 
 namespace ENV.Utilities
 {
@@ -20,9 +20,52 @@ namespace ENV.Utilities
             On = on;
         }
     }
+    public interface ISqlPart
+    {
+        string Build(SQLPartHelper helper);
+    }
+    public class SqlFunction : ISqlPart
+    {
+        string _name;
+        object[] _args;
+        public SqlFunction(string name, params object[] args)
+        {
+            _name = name;
+            _args = args;
+        }
+        public string Build(SQLPartHelper helper)
+        {
+            var args = EasySql.CreateCommaSeprated(_args, helper);
+            return _name + " (" + args + ")";
+        }
+    }
+    public class SqlPart : ISqlPart
+    {
+        Func<SQLPartHelper, string> _part;
+        public SqlPart(Func<SQLPartHelper, string> part)
+        {
+            _part = part;
+        }
+        public string Build(SQLPartHelper helper)
+        {
+            return _part(helper);
+        }
+        public SqlPart(params object[] parts)
+        {
+            _part = h =>
+            {
+                var sb = "";
+                foreach (var item in parts)
+                {
+                    sb += h.Translate(item);
+                }
+                return sb;
+            };
+        }
+    }
 
-    public delegate string SqlPart(SQLParthelper helper);
-    public class SQLParthelper
+
+    public class SQLPartHelper
     {
         Dictionary<Firefly.Box.Data.Entity, string> _aliases = new Dictionary<Firefly.Box.Data.Entity, string>();
 
@@ -68,10 +111,10 @@ namespace ENV.Utilities
             {
                 x = this.WhereToString(f);
             }
-            var sqlPart = x as SqlPart;
+            var sqlPart = x as ISqlPart;
             if (sqlPart != null)
             {
-                x = sqlPart(this);
+                x = sqlPart.Build(this);
             }
             var c = x as ColumnBase;
             if (c != null)
@@ -194,71 +237,91 @@ table tr:nth-of-type(odd) {
         }
         public static SqlPart Or(params object[] what)
         {
-            return x => SQLBuilder.CreateCommaSeprated(what, x, " or ", true);
+            return new SqlPart(x => CreateCommaSeprated(what, x, " or ", true));
         }
         public static SqlPart And(params object[] what)
         {
-            return x => SQLBuilder.CreateCommaSeprated(what, x, " and ", true);
+            return new SqlPart(x => CreateCommaSeprated(what, x, " and ", true));
         }
         public static SqlPart Distinct(params object[] column)
         {
-            return x => "Distinct " + SQLBuilder.CreateCommaSeprated(column, x, ", ", false);
+            return new SqlPart(x => "Distinct " + CreateCommaSeprated(column, x, ", ", false));
         }
 
 
-        public static SqlPart Count(ColumnBase column = null)
+        public static ISqlPart Count(ColumnBase column = null)
         {
-            if (column != null)
+            if (column == null)
             {
-                return h => "Count(" + h.Translate(column) + ")";
+                return new SqlFunction("Count", "*");
             }
             {
-                return h => "Count(*)";
+                return new SqlFunction("Count", column);
             }
 
         }
-        public static SqlPart SortDescending(object what)
+
+        public static ISqlPart Average(object column)
         {
-            return h => h.Translate(what) + " desc";
+            return new SqlFunction("avg", column);
+
         }
-        public static SqlPart SortAscending(object what)
+        public static ISqlPart Devide(object a, object b)
         {
-            return h => h.Translate(what) + " asc";
+            return new SqlPart(a, "/", b);
         }
-        public static SqlPart Average(object column)
+        public static ISqlPart Sum(object column)
         {
-            return h => "avg(" + h.Translate(column) + ")";
+            return new SqlFunction("sum", column);
         }
-        public static SqlPart Devide(object a, object b)
+        public static ISqlPart Round(object column, int decimals = 2)
         {
-            return h => h.Translate(a) + " / " + h.Translate(b);
-        }
-        public static SqlPart Sum(object column)
-        {
-            return h => "sum(" + h.Translate(column) + ")";
-        }
-        public static SqlPart Round(object column, int decimals = 2)
-        {
-            return h => "round (" + h.Translate(column) + "," + decimals + ")";
+            return new SqlFunction("round", column , decimals);
         }
 
-        public static SqlPart Max(ColumnBase column)
+        public static ISqlPart Max(ColumnBase column)
         {
-            return h => "max(" + h.Translate(column) + ")";
+            return new SqlFunction("max", column);
         }
-        public static SqlPart Min(ColumnBase column)
+        public static ISqlPart Min(ColumnBase column)
         {
-            return h => "min(" + h.Translate(column) + ")";
+            return new SqlFunction("min", column);
+
         }
         public static SqlPart NotExist(Entity inTable, FilterBase where)
         {
-            return helper => @" NOT EXISTS (
+            return new SqlPart(helper => @" NOT EXISTS (
                         SELECT 1 FROM " + helper.Translate(inTable) + @" 
-                        WHERE " + helper.WhereToString(where, inTable) + ")";
+                        WHERE " + helper.WhereToString(where, inTable) + ")");
         }
-        public static SqlPart CastAsDecimal(object what, int decimals = 2)
+        public static ISqlPart CastAsDecimal(object what, int decimals = 2)
         {
-            return h => "cast (" + h.Translate(what) + " as decimal(20, " + decimals + "))";
+            return new SqlFunction("cast", new SqlPart(what, " as ", new SqlFunction("decimal", 20, decimals)));
+        }
+        internal static string CreateCommaSeprated(object[] select, SQLPartHelper h, string seprator = ", ", bool addParents = false)
+        {
+            var selectString = "";
+            foreach (var item in select)
+            {
+                if (selectString.Length != 0)
+                    selectString += seprator;
+                string x;
+
+                if (item is object[])
+                {
+                    x = CreateCommaSeprated((object[])item, h, seprator, addParents);
+                }
+                else
+                    x = h.Translate(item);
+                if (addParents)
+                {
+                    x = "(" + x + ")";
+                }
+                selectString += x;
+
+            }
+
+            return selectString;
         }
         static SQLBuilder _sql = new SQLBuilder();
         public static SelectClass Select(params object[] columns)
@@ -401,7 +464,7 @@ table tr:nth-of-type(odd) {
 
         public string Query(object[] select, Entity[] from, object[] where, object[] groupBy = null, Join[] innerJoin = null, object[] orderBy = null)
         {
-            var helper = new SQLParthelper();
+            var helper = new SQLPartHelper();
             return helper.Translate(InternalQuery(select, from, where, groupBy, innerJoin, orderBy));
 
         }
@@ -409,87 +472,70 @@ table tr:nth-of-type(odd) {
 
         private static SqlPart InternalQuery(object[] select, Firefly.Box.Data.Entity[] from, object[] where, object[] groupBy = null, Join[] joins = null, object[] orderBy = null)
         {
-            return helper =>
-            {
-                helper.RegisterEntities(from);
-                if (joins != null)
-                    foreach (var item in joins)
-                    {
-                        helper.RegisterEntities(item.To);
-                    }
-                var theFrom = CreateCommaSeprated(from, helper);
-                if (joins != null)
-                    foreach (var j in joins)
-                    {
-                        theFrom += (j.outer ? " left outer" : " inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
+            return new SqlPart(helper =>
+           {
+               helper.RegisterEntities(from);
+               if (joins != null)
+                   foreach (var item in joins)
+                   {
+                       helper.RegisterEntities(item.To);
+                   }
+               var theFrom = EasySql.CreateCommaSeprated(from, helper);
+               if (joins != null)
+                   foreach (var j in joins)
+                   {
+                       theFrom += (j.outer ? " left outer" : " inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
 
-                    }
+                   }
 
-                string theWhere = CreateCommaSeprated(where, helper, " and ", true);
-                if (theWhere != "")
-                    theWhere = " Where " + theWhere;
+               string theWhere = EasySql.CreateCommaSeprated(where, helper, " and ", true);
+               if (theWhere != "")
+                   theWhere = " Where " + theWhere;
 
-                var result = "Select " + CreateCommaSeprated(select, helper) +
-                    " from " + theFrom +
-                    theWhere;
-                if (groupBy != null && groupBy.Length > 0)
-                {
-                    result += " group by " + CreateCommaSeprated(groupBy, helper);
-                }
+               var result = "Select " + EasySql.CreateCommaSeprated(select, helper) +
+                   " from " + theFrom +
+                   theWhere;
+               if (groupBy != null && groupBy.Length > 0)
+               {
+                   result += " group by " + EasySql.CreateCommaSeprated(groupBy, helper);
+               }
 
 
-                if (orderBy != null && orderBy.Length > 0)
-                {
-                    var ob = "";
-                    foreach (var item in orderBy)
-                    {
-                        if (!(item is SortDirection) && ob.Length > 0)
-                        {
-                            ob += ", ";
-                        }
-                        else if (ob.Length == 0)
-                        {
-                            ob = " order by ";
-                        }
-                        ob += helper.Translate(item);
-                    }
-                    result += ob;
-                }
-                return result;
-            };
+               if (orderBy != null && orderBy.Length > 0)
+               {
+                   var ob = "";
+                   foreach (var item in orderBy)
+                   {
+                       if (item  is SortDirection )
+                       {
+                           if (((SortDirection)item) == SortDirection.Descending)
+                                ob += " desc";
+                           continue;
+                       }
+                       if (ob.Length > 0)
+                       {
+                           ob += ", ";
+                       }
+                       else if (ob.Length == 0)
+                       {
+                           ob = " order by ";
+                       }
+
+                       ob += helper.Translate(item);
+                   }
+                   result += ob;
+               }
+               return result;
+           });
         }
 
 
 
-        internal static string CreateCommaSeprated(object[] select, SQLParthelper h, string seprator = ", ", bool addParents = false)
-        {
-            var selectString = "";
-            foreach (var item in select)
-            {
-                if (selectString.Length != 0)
-                    selectString += seprator;
-                string x;
 
-                if (item is object[])
-                {
-                    x = CreateCommaSeprated((object[])item, h, seprator, addParents);
-                }
-                else
-                    x = h.Translate(item);
-                if (addParents)
-                {
-                    x = "(" + x + ")";
-                }
-                selectString += x;
-
-            }
-
-            return selectString;
-        }
 
         public SqlPart InnerSelect(ColumnBase select, object where)
         {
-            return h => "(" + h.Translate(InternalQuery(new[] { select }, new[] { select.Entity }, new[] { where })) + ")";
+            return new SqlPart(h => "(" + h.Translate(InternalQuery(new[] { select }, new[] { select.Entity }, new[] { where })) + ")");
         }
     }
 
