@@ -323,7 +323,7 @@ table tr:nth-of-type(odd) {
 
             return selectString;
         }
-        static SQLBuilder _sql = new SQLBuilder();
+        
         public static SelectClass Select(params object[] columns)
         {
             return new SelectClass(columns);
@@ -388,7 +388,7 @@ table tr:nth-of-type(odd) {
             }
 
         }
-        public class SqlStatementKeywordBase
+        public class SqlStatementKeywordBase :ISqlPart
         {
             internal List<object> _select = new List<object>(),
                 _where = new List<object>(),
@@ -407,6 +407,25 @@ table tr:nth-of-type(odd) {
             }
             public override string ToString()
             {
+                return InternalBuild (new SQLPartHelper());
+            }
+            protected void CopyFrom(SqlStatementKeywordBase b)
+            {
+                _select.AddRange(b._select);
+                _where.AddRange(b._where);
+                _groupBy.AddRange(b._groupBy);
+                _orderBy.AddRange(b._orderBy);
+                _from.AddRange(b._from);
+                _joins.AddRange(b._joins);
+            }
+
+            public string Build(SQLPartHelper helper)
+            {
+                return "("+InternalBuild(helper)+")";
+            }
+
+            private string InternalBuild(SQLPartHelper helper)
+            {
                 if (_from.Count == 0)
                 {
                     foreach (var item in _select)
@@ -421,18 +440,59 @@ table tr:nth-of-type(odd) {
                     if (_from.Count == 0)
                         throw new InvalidOperationException("Couldn't figure out the from");
                 }
-                return new SQLBuilder().Query(_select.ToArray(), _from.ToArray(), _where.ToArray(), _groupBy.ToArray(), _joins.ToArray(), _orderBy.ToArray());
-            }
-            protected void CopyFrom(SqlStatementKeywordBase b)
-            {
-                _select.AddRange(b._select);
-                _where.AddRange(b._where);
-                _groupBy.AddRange(b._groupBy);
-                _orderBy.AddRange(b._orderBy);
-                _from.AddRange(b._from);
-                _joins.AddRange(b._joins);
-            }
+                helper.RegisterEntities(_from.ToArray());
+                if (_joins != null)
+                    foreach (var item in _joins)
+                    {
+                        helper.RegisterEntities(item.To);
+                    }
+                var theFrom = EasySql.CreateCommaSeprated(_from.ToArray(), helper);
+                if (_joins != null)
+                    foreach (var j in _joins)
+                    {
+                        theFrom += (j.outer ? " left outer" : " inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
 
+                    }
+
+                string theWhere = EasySql.CreateCommaSeprated(_where.ToArray(), helper, " and ", true);
+                if (theWhere != "")
+                    theWhere = " Where " + theWhere;
+
+                var result = "Select " + EasySql.CreateCommaSeprated(_select.ToArray(), helper) +
+                    " from " + theFrom +
+                    theWhere;
+                if (_groupBy != null && _groupBy.Count> 0)
+                {
+                    result += " group by " + EasySql.CreateCommaSeprated(_groupBy.ToArray(), helper);
+                }
+
+
+                if (_orderBy != null && _orderBy.Count > 0)
+                {
+                    var ob = "";
+                    foreach (var item in _orderBy)
+                    {
+                        if (item is SortDirection)
+                        {
+                            if (((SortDirection)item) == SortDirection.Descending)
+                                ob += " desc";
+                            continue;
+                        }
+                        if (ob.Length > 0)
+                        {
+                            ob += ", ";
+                        }
+                        else if (ob.Length == 0)
+                        {
+                            ob = " order by ";
+                        }
+
+                        ob += helper.Translate(item);
+                    }
+                    result += ob;
+                }
+                return result;
+            }
         }
         public class GroupByClass : SqlStatementKeywordBase
         {
@@ -456,87 +516,5 @@ table tr:nth-of-type(odd) {
         }
     }
 
-
-    public class SQLBuilder
-    {
-
-
-
-        public string Query(object[] select, Entity[] from, object[] where, object[] groupBy = null, Join[] innerJoin = null, object[] orderBy = null)
-        {
-            var helper = new SQLPartHelper();
-            return helper.Translate(InternalQuery(select, from, where, groupBy, innerJoin, orderBy));
-
-        }
-
-
-        private static SqlPart InternalQuery(object[] select, Firefly.Box.Data.Entity[] from, object[] where, object[] groupBy = null, Join[] joins = null, object[] orderBy = null)
-        {
-            return new SqlPart(helper =>
-           {
-               helper.RegisterEntities(from);
-               if (joins != null)
-                   foreach (var item in joins)
-                   {
-                       helper.RegisterEntities(item.To);
-                   }
-               var theFrom = EasySql.CreateCommaSeprated(from, helper);
-               if (joins != null)
-                   foreach (var j in joins)
-                   {
-                       theFrom += (j.outer ? " left outer" : " inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
-
-                   }
-
-               string theWhere = EasySql.CreateCommaSeprated(where, helper, " and ", true);
-               if (theWhere != "")
-                   theWhere = " Where " + theWhere;
-
-               var result = "Select " + EasySql.CreateCommaSeprated(select, helper) +
-                   " from " + theFrom +
-                   theWhere;
-               if (groupBy != null && groupBy.Length > 0)
-               {
-                   result += " group by " + EasySql.CreateCommaSeprated(groupBy, helper);
-               }
-
-
-               if (orderBy != null && orderBy.Length > 0)
-               {
-                   var ob = "";
-                   foreach (var item in orderBy)
-                   {
-                       if (item  is SortDirection )
-                       {
-                           if (((SortDirection)item) == SortDirection.Descending)
-                                ob += " desc";
-                           continue;
-                       }
-                       if (ob.Length > 0)
-                       {
-                           ob += ", ";
-                       }
-                       else if (ob.Length == 0)
-                       {
-                           ob = " order by ";
-                       }
-
-                       ob += helper.Translate(item);
-                   }
-                   result += ob;
-               }
-               return result;
-           });
-        }
-
-
-
-
-
-        public SqlPart InnerSelect(ColumnBase select, object where)
-        {
-            return new SqlPart(h => "(" + h.Translate(InternalQuery(new[] { select }, new[] { select.Entity }, new[] { where })) + ")");
-        }
-    }
 
 }
