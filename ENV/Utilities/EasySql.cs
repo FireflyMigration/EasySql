@@ -178,7 +178,7 @@ table tr:nth-of-type(odd) {
                     // Note that this method was called GetResult in older versions of ENV
                     var r = connection.GetHtmlTableBasedOnSQLResultForDebugPurposes(sql);
                     sw.WriteLine("<h2>Result:</h2>");
-                    sw.WriteLine( r);
+                    sw.WriteLine(r);
                 }
                 catch (Exception ex)
                 {
@@ -265,52 +265,40 @@ table tr:nth-of-type(odd) {
         {
             return new SelectClass(columns);
         }
-        public class SelectClass
+        public class SelectClass : SqlStatementKeywordBase
         {
-            internal object[] _select;
-            public SelectClass(object[] select)
+            public SelectClass(object[] select) : base(null)
             {
-                _select = select;
+                _select.AddRange(select);
             }
 
             public FromClass From(params Entity[] entities)
             {
-                return new FromClass(this, entities);
+                var r = new FromClass(this);
+                r._from.AddRange(entities);
+                return r;
             }
             public WhereClass Where(params object[] filter)
             {
-                var from = new List<Entity>();
-                foreach (var item in _select)
-                {
-                    var c = item as ColumnBase;
-                    if (c != null && c.Entity != null && !from.Contains(c.Entity))
-                        from.Add(c.Entity);
-                }
-
-                return new WhereClass(new FromClass(this, from.ToArray()), filter);
+                return new WhereClass(this, filter);
             }
         }
-        public class FromClass
+        public class FromClass : SqlStatementKeywordBase
         {
-            internal SelectClass _select;
-            internal Entity[] _from;
-            internal List<Join> _joins = new List<Join>();
-            public FromClass(SelectClass s, Entity[] from)
+
+            public FromClass(SqlStatementKeywordBase s) : base(s)
             {
-                _select = s;
-                _from = from;
+
             }
             public FromClass InnerJoin(Entity to, FilterBase where)
             {
-                var result = new FromClass(_select, _from);
-                result._joins.AddRange(this._joins);
+                var result = new FromClass(this);
                 result._joins.Add(new Join(to, where));
                 return result;
             }
             public FromClass OuterJoin(Entity to, FilterBase where)
             {
-                var result = new FromClass(_select, _from);
-                result._joins.AddRange(this._joins);
+                var result = new FromClass(this);
                 result._joins.Add(new Join(to, where, true));
                 return result;
             }
@@ -320,57 +308,88 @@ table tr:nth-of-type(odd) {
             }
 
         }
-        public class WhereClass
+        public class WhereClass : SqlStatementKeywordBase
         {
-            internal FromClass _from;
-            internal object[] _where;
-            public WhereClass(FromClass from, object[] where)
+            public WhereClass(SqlStatementKeywordBase from, object[] filter) : base(from)
             {
-                _from = from;
-                _where = where;
+                this._where.AddRange(filter);
             }
-            public override string ToString()
-            {
-                return new SQLBuilder().Query(_from._select._select, _from._from, _where, innerJoin: _from._joins.ToArray());
-            }
-            public static implicit operator string(WhereClass w)
-            {
-                return w.ToString();
-            }
+
             public GroupByClass GroupBy(params object[] groupBy)
             {
                 return new GroupByClass(this, groupBy);
             }
-            public string OrderBy(params object[] orderBy)
+            public OrderByClass OrderBy(params object[] orderBy)
             {
-                return new SQLBuilder().Query(_from._select._select, _from._from, _where, innerJoin: _from._joins.ToArray(), orderBy: orderBy);
+                return new OrderByClass(this, orderBy);
             }
 
         }
-        public class GroupByClass
+        public class SqlStatementKeywordBase
         {
-            WhereClass _where;
-            object[] _columns;
-            public GroupByClass(WhereClass where, object[] columns)
+            internal List<object> _select = new List<object>(),
+                _where = new List<object>(),
+            _groupBy = new List<object>(),
+                _orderBy = new List<object>();
+            internal List<Entity> _from = new List<Entity>();
+            internal List<Join> _joins = new List<Join>();
+            public SqlStatementKeywordBase(SqlStatementKeywordBase original)
             {
-                _where = where;
-                _columns = columns;
-
+                if (original != null)
+                    CopyFrom(original);
             }
-            public override string ToString()
-            {
-                return new SQLBuilder().Query(_where._from._select._select, _where._from._from, _where._where, groupBy: _columns, innerJoin: _where._from._joins.ToArray());
-            }
-            public string OrderBy(params object[] orderBy)
-            {
-                return new SQLBuilder().Query(_where._from._select._select, _where._from._from, _where._where, _columns, innerJoin: _where._from._joins.ToArray(), orderBy: orderBy);
-            }
-            public static implicit operator string(GroupByClass w)
+            public static implicit operator string(SqlStatementKeywordBase w)
             {
                 return w.ToString();
             }
+            public override string ToString()
+            {
+                if (_from.Count == 0)
+                {
+                    foreach (var item in _select)
+                    {
+                        var c = item as ColumnBase;
+                        if (c != null)
+                        {
+                            if (!_from.Contains(c.Entity))
+                                _from.Add(c.Entity);
+                        }
+                    }
+                    if (_from.Count == 0)
+                        throw new InvalidOperationException("Couldn't figure out the from");
+                }
+                return new SQLBuilder().Query(_select.ToArray(), _from.ToArray(), _where.ToArray(), _groupBy.ToArray(), _joins.ToArray(), _orderBy.ToArray());
+            }
+            protected void CopyFrom(SqlStatementKeywordBase b)
+            {
+                _select.AddRange(b._select);
+                _where.AddRange(b._where);
+                _groupBy.AddRange(b._groupBy);
+                _orderBy.AddRange(b._orderBy);
+                _from.AddRange(b._from);
+                _joins.AddRange(b._joins);
+            }
 
+        }
+        public class GroupByClass : SqlStatementKeywordBase
+        {
+            public GroupByClass(WhereClass where, object[] columns) : base(where)
+            {
+                _groupBy.AddRange(columns);
 
+            }
+
+            public OrderByClass OrderBy(params object[] orderBy)
+            {
+                return new OrderByClass(this, orderBy);
+            }
+        }
+        public class OrderByClass : SqlStatementKeywordBase
+        {
+            public OrderByClass(SqlStatementKeywordBase parent, object[] orderBy) : base(parent)
+            {
+                _orderBy.AddRange(orderBy);
+            }
         }
     }
 
@@ -413,13 +432,13 @@ table tr:nth-of-type(odd) {
                 var result = "Select " + CreateCommaSeprated(select, helper) +
                     " from " + theFrom +
                     theWhere;
-                if (groupBy != null)
+                if (groupBy != null && groupBy.Length > 0)
                 {
                     result += " group by " + CreateCommaSeprated(groupBy, helper);
                 }
 
 
-                if (orderBy != null)
+                if (orderBy != null && orderBy.Length > 0)
                 {
                     var ob = "";
                     foreach (var item in orderBy)
