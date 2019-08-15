@@ -175,7 +175,7 @@ table tr:nth-of-type(odd) {
                 sw.WriteLine("<pre>" + sql + "</pre>");
                 try
                 {
-                    
+                    // Note that this method was called GetResult in older versions of ENV
                     var r = connection.GetHtmlTableBasedOnSQLResultForDebugPurposes(sql);
                     sw.WriteLine("<h2>Result:</h2>");
                     sw.WriteLine( r);
