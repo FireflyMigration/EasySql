@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Firefly.Box;
+using System.Collections;
 
 namespace ENV.Utilities
 {
@@ -252,11 +253,11 @@ table tr:nth-of-type(odd) {
             }
             Windows.OSCommand(t);
         }
-        public static ISqlPart Or(params object[] what)
+        public static ISqlPart Or(params WhereItem[] what)
         {
             return new CommaSeparated(what, " or ", true);
         }
-        public static ISqlPart And(params object[] what)
+        public static ISqlPart And(params WhereItem[] what)
         {
             return new CommaSeparated(what, " and ", true) { NewLine = true };
         }
@@ -266,7 +267,7 @@ table tr:nth-of-type(odd) {
         }
 
 
-        public static ISqlPart Count(ColumnBase column = null)
+        public static SqlPart Count(ColumnBase column = null)
         {
             if (column == null)
             {
@@ -278,29 +279,29 @@ table tr:nth-of-type(odd) {
 
         }
 
-        public static ISqlPart Average(object column)
+        public static SqlPart Average(object column)
         {
             return new SqlFunction("avg", column);
 
         }
-        public static ISqlPart Devide(object a, object b)
+        public static SqlPart Devide(object a, object b)
         {
             return new SqlPart(a, "/", b);
         }
-        public static ISqlPart Sum(object column)
+        public static SqlPart Sum(object column)
         {
             return new SqlFunction("sum", column);
         }
-        public static ISqlPart Round(object column, int decimals = 2)
+        public static SqlPart Round(object column, int decimals = 2)
         {
             return new SqlFunction("round", column, decimals);
         }
 
-        public static ISqlPart Max(ColumnBase column)
+        public static SqlPart Max(ColumnBase column)
         {
             return new SqlFunction("max", column);
         }
-        public static ISqlPart Min(ColumnBase column)
+        public static SqlPart Min(ColumnBase column)
         {
             return new SqlFunction("min", column);
 
@@ -311,7 +312,7 @@ table tr:nth-of-type(odd) {
                         SELECT 1 FROM " + helper.Translate(inTable) + @" 
                         WHERE " + helper.WhereToString(where, inTable) + ")");
         }
-        public static ISqlPart CastAsDecimal(object what, int decimals = 2)
+        public static SqlPart CastAsDecimal(object what, int decimals = 2)
         {
             return new SqlFunction("cast", new SqlPart(what, " as ", new SqlFunction("decimal", 20, decimals)));
         }
@@ -319,13 +320,13 @@ table tr:nth-of-type(odd) {
 
 
 
-        public static SelectClass Select(params object[] columns)
+        public static SelectClass Select(params SelectItem[] columns)
         {
             return new SelectClass(columns);
         }
         public class SelectClass : SqlStatementKeywordBase
         {
-            public SelectClass(object[] select) : base(null)
+            public SelectClass(SelectItem[] select) : base(null)
             {
                 _select.AddRange(select);
             }
@@ -336,7 +337,7 @@ table tr:nth-of-type(odd) {
                 r._from.AddRange(entities);
                 return r;
             }
-            public WhereClass Where(params object[] filter)
+            public WhereClass Where(params WhereItem[] filter)
             {
                 return new WhereClass(this, filter);
             }
@@ -361,24 +362,125 @@ table tr:nth-of-type(odd) {
                 result._joins.Add(new Join(to, where, true));
                 return result;
             }
-            public WhereClass Where(params object[] filter)
+            public WhereClass Where(params WhereItem[] filter)
             {
                 return new WhereClass(this, filter);
             }
 
         }
+        public class WhereItem : ISqlPart
+        {
+            object _item;
+            private WhereItem(object item)
+            {
+                _item = item;
+            }
+            public string Build(SQLPartHelper helper)
+            {
+                return helper.Translate(_item);
+            }
+            public static implicit operator WhereItem(FilterBase filter)
+            {
+                return new WhereItem(filter);
+            }
+            public static implicit operator WhereItem(SqlPart filter)
+            {
+                return new WhereItem(filter);
+            }
+        }
+        public class SelectItem : ISqlPart
+        {
+            internal object _item;
+            private SelectItem(object item)
+            {
+                _item = item;
+            }
+            public string Build(SQLPartHelper helper)
+            {
+                return helper.Translate(_item);
+            }
+            public static implicit operator SelectItem(ColumnBase filter)
+            {
+                return new SelectItem(filter);
+            }
+            
+            public static implicit operator SelectItem(SqlPart filter)
+            {
+                return new SelectItem(filter);
+            }
+            public static implicit operator SelectItem(SqlStatementKeywordBase filter)
+            {
+                return new SelectItem(filter);
+            }
+            public static implicit operator SelectItem(SelectItems filter)
+            {
+                return new SelectItem((object[])filter._items.ToArray());
+            }
+
+        }
+        public class SelectItems:IEnumerable<SelectItem>
+        {
+            internal List<SelectItem> _items = new List<SelectItem>();
+            public SelectItems(params SelectItem[] items)
+            {
+                _items.AddRange(items);
+            }
+            public void Add(SelectItem item)
+            {
+                _items.Add(item);
+            }
+
+            public IEnumerator<SelectItem> GetEnumerator()
+            {
+                return _items.GetEnumerator();
+            }
+
+            IEnumerator IEnumerable.GetEnumerator()
+            {
+                return _items.GetEnumerator();
+            }
+        }
+        public class OrderByItem : ISqlPart
+        {
+            internal object _item;
+            private OrderByItem(object item)
+            {
+                _item = item;
+            }
+            public string Build(SQLPartHelper helper)
+            {
+                return helper.Translate(_item);
+            }
+            public static implicit operator OrderByItem(ColumnBase filter)
+            {
+                return new OrderByItem(filter);
+            }
+            public static implicit operator OrderByItem(SqlPart filter)
+            {
+                return new OrderByItem(filter);
+            }
+            public static implicit operator OrderByItem(int filter)
+            {
+                return new OrderByItem(filter);
+            }
+            public static implicit operator OrderByItem(SortDirection filter)
+            {
+                return new OrderByItem(filter);
+            }
+
+        }
         public class WhereClass : SqlStatementKeywordBase
         {
-            public WhereClass(SqlStatementKeywordBase from, object[] filter) : base(from)
+            public WhereClass(SqlStatementKeywordBase from, WhereItem[] filter) : base(from)
             {
                 this._where.AddRange(filter);
             }
 
-            public GroupByClass GroupBy(params object[] groupBy)
+            public GroupByClass GroupBy(params SelectItem[] groupBy)
             {
                 return new GroupByClass(this, groupBy);
             }
-            public OrderByClass OrderBy(params object[] orderBy)
+            public OrderByClass OrderBy(params OrderByItem[] orderBy)
             {
                 return new OrderByClass(this, orderBy);
             }
@@ -386,10 +488,11 @@ table tr:nth-of-type(odd) {
         }
         public class SqlStatementKeywordBase : ISqlPart
         {
-            internal List<object> _select = new List<object>(),
-                _where = new List<object>(),
-            _groupBy = new List<object>(),
-                _orderBy = new List<object>();
+            internal List<SelectItem> _select = new List<SelectItem>(),
+
+            _groupBy = new List<SelectItem>();
+            internal List<OrderByItem> _orderBy = new List<OrderByItem>();
+            internal List<WhereItem> _where = new List<WhereItem>();
             internal List<Entity> _from = new List<Entity>();
             internal List<Join> _joins = new List<Join>();
             public SqlStatementKeywordBase(SqlStatementKeywordBase original)
@@ -426,7 +529,7 @@ table tr:nth-of-type(odd) {
                 {
                     foreach (var item in _select)
                     {
-                        var c = item as ColumnBase;
+                        var c = item._item as ColumnBase;
                         if (c != null)
                         {
                             if (!_from.Contains(c.Entity))
@@ -470,9 +573,9 @@ table tr:nth-of-type(odd) {
                     var ob = "";
                     foreach (var item in _orderBy)
                     {
-                        if (item is SortDirection)
+                        if (item._item is SortDirection)
                         {
-                            if (((SortDirection)item) == SortDirection.Descending)
+                            if (((SortDirection)item._item) == SortDirection.Descending)
                                 ob += " desc";
                             continue;
                         }
@@ -494,20 +597,20 @@ table tr:nth-of-type(odd) {
         }
         public class GroupByClass : SqlStatementKeywordBase
         {
-            public GroupByClass(WhereClass where, object[] columns) : base(where)
+            public GroupByClass(WhereClass where, SelectItem[] columns) : base(where)
             {
                 _groupBy.AddRange(columns);
 
             }
 
-            public OrderByClass OrderBy(params object[] orderBy)
+            public OrderByClass OrderBy(params OrderByItem[] orderBy)
             {
                 return new OrderByClass(this, orderBy);
             }
         }
         public class OrderByClass : SqlStatementKeywordBase
         {
-            public OrderByClass(SqlStatementKeywordBase parent, object[] orderBy) : base(parent)
+            public OrderByClass(SqlStatementKeywordBase parent, OrderByItem[] orderBy) : base(parent)
             {
                 _orderBy.AddRange(orderBy);
             }
@@ -543,6 +646,14 @@ table tr:nth-of-type(odd) {
                 if (item is object[])
                 {
                     x = helper.Translate(new CommaSeparated((object[])item, _separator, _addParenthesis) { NewLine = NewLine });
+                }
+                else if (item is EasySql.SelectItems)
+                {
+                    x = helper.Translate(new CommaSeparated((object[])((EasySql.SelectItems)item)._items.ToArray(), _separator, _addParenthesis) { NewLine = NewLine });
+                }
+                else if (item is EasySql.SelectItem&&((EasySql.SelectItem)item)._item is EasySql.SelectItem[])
+                {
+                    x = helper.Translate(new CommaSeparated((object[])((EasySql.SelectItem[])((EasySql.SelectItem)item)._item), _separator, _addParenthesis) { NewLine = NewLine });
                 }
                 else
                     x = helper.Translate(item);

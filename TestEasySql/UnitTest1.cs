@@ -33,6 +33,19 @@ namespace TestEasySql
                 );
         }
         [TestMethod]
+        public void TestListOfSelectItems()
+        {
+            var c = new Models.Customers();
+            var columns = new SelectItems {
+                c.CustomerID,c.CompanyName
+            };
+            Verify(
+                Select( columns, c.Phone)
+                ,
+                "select customerid,companyName,phone from customers"
+                );
+        }
+        [TestMethod]
         public void SQLWithWhere()
         {
             var o = new Models.Orders();
