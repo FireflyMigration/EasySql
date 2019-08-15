@@ -26,12 +26,12 @@ namespace ENV.Utilities
     }
     public class SqlFunction : SqlPart
     {
-        
-        public SqlFunction(string name, params object[] args):base(name,"(",new CommaSeparated(args),")")
+
+        public SqlFunction(string name, params object[] args) : base(name, "(", new CommaSeparated(args), ")")
         {
-            
+
         }
-        
+
     }
     public class SqlPart : ISqlPart
     {
@@ -61,6 +61,28 @@ namespace ENV.Utilities
 
     public class SQLPartHelper
     {
+        string _tab = "       ";
+        string _indentTab = "";
+        public string NewLine { get { return "\r\n" + _indentTab; } }
+        int _indent = 0;
+        internal void Indent()
+        {
+            _indent++;
+            buildIndent();
+        }
+        void buildIndent()
+        {
+            _indentTab = "";
+            for (int i = 0; i < _indent; i++)
+            {
+                _indentTab += _tab;
+            }
+        }
+        internal void UnIndent()
+        {
+            _indent--;
+            buildIndent();
+        }
         Dictionary<Firefly.Box.Data.Entity, string> _aliases = new Dictionary<Firefly.Box.Data.Entity, string>();
 
         public void RegisterEntities(params Entity[] entities)
@@ -131,6 +153,7 @@ namespace ENV.Utilities
                 return s;
             return "";
         }
+
     }
     public static class EasySql
     {
@@ -235,11 +258,11 @@ table tr:nth-of-type(odd) {
         }
         public static ISqlPart And(params object[] what)
         {
-            return new CommaSeparated(what, " and ", true);
+            return new CommaSeparated(what, " and ", true) { NewLine = true };
         }
         public static SqlPart Distinct(params object[] column)
         {
-            return new SqlPart( "Distinct " ,new CommaSeparated(column));
+            return new SqlPart("Distinct ", new CommaSeparated(column));
         }
 
 
@@ -270,7 +293,7 @@ table tr:nth-of-type(odd) {
         }
         public static ISqlPart Round(object column, int decimals = 2)
         {
-            return new SqlFunction("round", column , decimals);
+            return new SqlFunction("round", column, decimals);
         }
 
         public static ISqlPart Max(ColumnBase column)
@@ -292,10 +315,10 @@ table tr:nth-of-type(odd) {
         {
             return new SqlFunction("cast", new SqlPart(what, " as ", new SqlFunction("decimal", 20, decimals)));
         }
-        
 
-        
-        
+
+
+
         public static SelectClass Select(params object[] columns)
         {
             return new SelectClass(columns);
@@ -318,7 +341,7 @@ table tr:nth-of-type(odd) {
                 return new WhereClass(this, filter);
             }
         }
-        
+
         public class FromClass : SqlStatementKeywordBase
         {
 
@@ -361,7 +384,7 @@ table tr:nth-of-type(odd) {
             }
 
         }
-        public class SqlStatementKeywordBase :ISqlPart
+        public class SqlStatementKeywordBase : ISqlPart
         {
             internal List<object> _select = new List<object>(),
                 _where = new List<object>(),
@@ -380,7 +403,7 @@ table tr:nth-of-type(odd) {
             }
             public override string ToString()
             {
-                return InternalBuild (new SQLPartHelper());
+                return InternalBuild(new SQLPartHelper());
             }
             protected void CopyFrom(SqlStatementKeywordBase b)
             {
@@ -394,7 +417,7 @@ table tr:nth-of-type(odd) {
 
             public string Build(SQLPartHelper helper)
             {
-                return "("+InternalBuild(helper)+")";
+                return "(" + InternalBuild(helper) + ")";
             }
 
             private string InternalBuild(SQLPartHelper helper)
@@ -419,24 +442,26 @@ table tr:nth-of-type(odd) {
                     {
                         helper.RegisterEntities(item.To);
                     }
-                var theFrom = helper.Translate(new CommaSeparated(_from));
+                var theFrom = helper.Translate(new CommaSeparated(_from) { NewLine = true });
+                helper.Indent();
                 if (_joins != null)
                     foreach (var j in _joins)
                     {
-                        theFrom += (j.outer ? " left outer" : " inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
+                        theFrom += helper.NewLine + (j.outer ? " Left outer" : " Inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
 
                     }
+                helper.UnIndent();
 
                 string theWhere = helper.Translate(And(_where.ToArray()));
                 if (theWhere != "")
-                    theWhere = " Where " + theWhere;
+                    theWhere = helper.NewLine + " Where " + theWhere;
 
-                var result = "Select " + helper.Translate(new CommaSeparated(_select)) +
-                    " from " + theFrom +
+                var result = "Select " + helper.Translate(new CommaSeparated(_select) { NewLine = true }) +
+                    helper.NewLine + "  From " + theFrom +
                     theWhere;
-                if (_groupBy != null && _groupBy.Count> 0)
+                if (_groupBy != null && _groupBy.Count > 0)
                 {
-                    result += " group by " + helper.Translate(new CommaSeparated(_groupBy));
+                    result += helper.NewLine + "Group by " + helper.Translate(new CommaSeparated(_groupBy) { NewLine = true });
                 }
 
 
@@ -453,11 +478,11 @@ table tr:nth-of-type(odd) {
                         }
                         if (ob.Length > 0)
                         {
-                            ob += ", ";
+                            ob += ", " + helper.NewLine;
                         }
                         else if (ob.Length == 0)
                         {
-                            ob = " order by ";
+                            ob = helper.NewLine + "Order by ";
                         }
 
                         ob += helper.Translate(item);
@@ -490,28 +515,34 @@ table tr:nth-of-type(odd) {
     }
     public class CommaSeparated : ISqlPart
     {
-        System.Collections.IEnumerable  _what;
+        System.Collections.IEnumerable _what;
         string _separator;
         bool _addParenthesis;
+        public bool NewLine { get; set; }
         public CommaSeparated(System.Collections.IEnumerable what, string separator = ", ", bool addParenthesis = false)
         {
             _what = what;
             _separator = separator;
             _addParenthesis = addParenthesis;
         }
-        
+
         public string Build(SQLPartHelper helper)
         {
+            helper.Indent();
             var selectString = "";
             foreach (var item in _what)
             {
                 if (selectString.Length != 0)
+                {
                     selectString += _separator;
+                    if (NewLine)
+                        selectString += helper.NewLine;
+                }
                 string x;
 
                 if (item is object[])
                 {
-                    x   = helper.Translate( new CommaSeparated((object[])item, _separator, _addParenthesis));
+                    x = helper.Translate(new CommaSeparated((object[])item, _separator, _addParenthesis) { NewLine = NewLine });
                 }
                 else
                     x = helper.Translate(item);
@@ -522,7 +553,7 @@ table tr:nth-of-type(odd) {
                 selectString += x;
 
             }
-
+            helper.UnIndent();
             return selectString;
         }
     }
