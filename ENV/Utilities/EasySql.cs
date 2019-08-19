@@ -85,13 +85,13 @@ namespace ENV.Utilities
             buildIndent();
         }
         Dictionary<Firefly.Box.Data.Entity, string> _aliases = new Dictionary<Firefly.Box.Data.Entity, string>();
-
+        int _aliasCount = 0;
         public void RegisterEntities(params Entity[] entities)
         {
             foreach (var item in entities)
             {
                 if (!_aliases.ContainsKey(item))
-                    _aliases.Add(item, "t" + (_aliases.Count + 1));
+                    _aliases.Add(item, generateAlias());
             }
         }
         bool _isOracle = false;
@@ -144,6 +144,7 @@ namespace ENV.Utilities
                 RegisterEntities(e);
                 x = e.EntityName + " " + GetAliasOf(e);
             }
+            
             return x.ToString();
         }
 
@@ -155,6 +156,10 @@ namespace ENV.Utilities
             return "";
         }
 
+        internal string generateAlias()
+        {
+            return  "t" + (++_aliasCount);
+        }
     }
     public static class EasySql
     {
@@ -261,13 +266,17 @@ table tr:nth-of-type(odd) {
         {
             return new CommaSeparated(what, " and ", true) { NewLine = true };
         }
+        public static SqlPart Not(params WhereItem[] what)
+        {
+            return new SqlFunction("not", new CommaSeparated(what, " and ", true) { NewLine = true });
+        }
         public static SqlPart Distinct(params object[] column)
         {
             return new SqlPart("Distinct ", new CommaSeparated(column));
         }
 
 
-        public static SqlPart Count(ColumnBase column = null)
+        public static SqlPart Count(object column = null)
         {
             if (column == null)
             {
@@ -301,6 +310,16 @@ table tr:nth-of-type(odd) {
         {
             return new SqlFunction("max", column);
         }
+        internal static SqlPart StringValue(object s)
+        {
+            if (s is string || s is Text)
+                return new SqlPart( "'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
+            return new SqlPart(s);
+        }
+        public static SqlPart Like(TextColumn column, string like)
+        {
+            return new SqlPart(column, " like ", StringValue(like));
+        }
         public static SqlPart Min(ColumnBase column)
         {
             return new SqlFunction("min", column);
@@ -324,6 +343,7 @@ table tr:nth-of-type(odd) {
         {
             return new SelectClass(columns);
         }
+        
         public class SelectClass : SqlStatementKeywordBase
         {
             public SelectClass(SelectItem[] select) : base(null)
@@ -331,7 +351,7 @@ table tr:nth-of-type(odd) {
                 _select.AddRange(select);
             }
 
-            public FromClass From(params Entity[] entities)
+            public FromClass From(params FromItem[] entities)
             {
                 var r = new FromClass(this);
                 r._from.AddRange(entities);
@@ -340,6 +360,10 @@ table tr:nth-of-type(odd) {
             public WhereClass Where(params WhereItem[] filter)
             {
                 return new WhereClass(this, filter);
+            }
+            public OrderByClass OrderBy(params OrderByItem[] orderBy)
+            {
+                return new OrderByClass(this, orderBy);
             }
         }
 
@@ -356,6 +380,10 @@ table tr:nth-of-type(odd) {
                 result._joins.Add(new Join(to, where));
                 return result;
             }
+            public OrderByClass OrderBy(params OrderByItem[] orderBy)
+            {
+                return new OrderByClass(this, orderBy);
+            }
             public FromClass OuterJoin(Entity to, FilterBase where)
             {
                 var result = new FromClass(this);
@@ -365,6 +393,12 @@ table tr:nth-of-type(odd) {
             public WhereClass Where(params WhereItem[] filter)
             {
                 return new WhereClass(this, filter);
+            }
+            public WhereClass Where(ICustomFilterMember filter)
+            {
+                var fc = new FilterCollection();
+                fc.Add("{0}", filter);
+                return new WhereClass(this, new WhereItem[] { fc });
             }
 
         }
@@ -388,6 +422,38 @@ table tr:nth-of-type(odd) {
                 return new WhereItem(filter);
             }
         }
+        public class FromItem :ISqlPart
+        {
+            internal object _what;
+            public FromItem(object what)
+            {
+                _what = what;
+            }
+            public static implicit operator FromItem(Entity e)
+            {
+                return new FromItem(e);
+
+            }
+            public static implicit operator FromItem(SqlStatementKeywordBase e)
+            {
+                return new FromItem(e);
+
+            }
+
+            internal void RegisterEntity(SQLPartHelper helper)
+            {
+                var e = _what as Firefly.Box.Data.Entity;
+                if (e != null)
+                    helper.RegisterEntities(e);
+            }
+
+            public string Build(SQLPartHelper helper)
+            {
+                return helper.Translate(_what);
+            }
+
+            
+        }
         public class SelectItem : ISqlPart
         {
             internal object _item;
@@ -403,7 +469,7 @@ table tr:nth-of-type(odd) {
             {
                 return new SelectItem(filter);
             }
-            
+
             public static implicit operator SelectItem(SqlPart filter)
             {
                 return new SelectItem(filter);
@@ -418,7 +484,7 @@ table tr:nth-of-type(odd) {
             }
 
         }
-        public class SelectItems:IEnumerable<SelectItem>
+        public class SelectItems : IEnumerable<SelectItem>
         {
             internal List<SelectItem> _items = new List<SelectItem>();
             public SelectItems(params SelectItem[] items)
@@ -493,7 +559,7 @@ table tr:nth-of-type(odd) {
             _groupBy = new List<SelectItem>();
             internal List<OrderByItem> _orderBy = new List<OrderByItem>();
             internal List<WhereItem> _where = new List<WhereItem>();
-            internal List<Entity> _from = new List<Entity>();
+            internal List<FromItem> _from = new List<FromItem>();
             internal List<Join> _joins = new List<Join>();
             public SqlStatementKeywordBase(SqlStatementKeywordBase original)
             {
@@ -527,25 +593,46 @@ table tr:nth-of-type(odd) {
             {
                 if (_from.Count == 0)
                 {
+                    var entitiesDone = new HashSet<Entity>();
                     foreach (var item in _select)
                     {
                         var c = item._item as ColumnBase;
                         if (c != null)
                         {
-                            if (!_from.Contains(c.Entity))
+                            if (!entitiesDone.Contains(c.Entity))
+                            {
                                 _from.Add(c.Entity);
+                                entitiesDone.Add(c.Entity);
+                            }
                         }
                     }
                     if (_from.Count == 0)
                         throw new InvalidOperationException("Couldn't figure out the from");
                 }
-                helper.RegisterEntities(_from.ToArray());
+                foreach (var item in _from)
+                {
+                    item.RegisterEntity(helper);
+                }
+                
                 if (_joins != null)
                     foreach (var item in _joins)
                     {
                         helper.RegisterEntities(item.To);
                     }
-                var theFrom = helper.Translate(new CommaSeparated(_from) { NewLine = true });
+
+                var tempFrom = new List<object>();
+                foreach (var item in _from)
+                {
+                    var z = item._what as SqlStatementKeywordBase;
+                    if (z != null)
+                    {
+                        tempFrom.Add(new SqlPart(z, " ", helper.generateAlias()));
+                    }
+                    else
+                        tempFrom.Add(item._what);
+                }
+
+                var theFrom = helper.Translate(new CommaSeparated(tempFrom) { NewLine = true });
                 helper.Indent();
                 if (_joins != null)
                     foreach (var j in _joins)
@@ -651,7 +738,7 @@ table tr:nth-of-type(odd) {
                 {
                     x = helper.Translate(new CommaSeparated((object[])((EasySql.SelectItems)item)._items.ToArray(), _separator, _addParenthesis) { NewLine = NewLine });
                 }
-                else if (item is EasySql.SelectItem&&((EasySql.SelectItem)item)._item is EasySql.SelectItem[])
+                else if (item is EasySql.SelectItem && ((EasySql.SelectItem)item)._item is EasySql.SelectItem[])
                 {
                     x = helper.Translate(new CommaSeparated((object[])((EasySql.SelectItem[])((EasySql.SelectItem)item)._item), _separator, _addParenthesis) { NewLine = NewLine });
                 }
@@ -667,6 +754,30 @@ table tr:nth-of-type(odd) {
             helper.UnIndent();
             return selectString;
         }
+    }
+    public static class ColumnSqlHelper
+    {
+        public static SqlPart IsIn<T>(this TypedColumnBase<T> column, params T[] vals)
+        {
+            var v = new List<object>();
+            foreach (var item in vals)
+            {
+                v.Add(EasySql.StringValue(item));
+                
+            }
+            return new SqlPart(column, " ", new SqlFunction("in",v.ToArray()));
+        }
+        public static SqlPart IsNotIn<T>(this TypedColumnBase<T> column, params T[] vals)
+        {
+            var v = new List<object>();
+            foreach (var item in vals)
+            {
+                v.Add(EasySql.StringValue(item));
+            }
+            return new SqlPart(column, " ", new SqlFunction("not in", v.ToArray()));
+        }
+
+
     }
 
 
