@@ -325,9 +325,15 @@ table tr:nth-of-type(odd) {
             return new SqlFunction("min", column);
 
         }
-        public static SqlPart NotExist(Entity inTable, FilterBase where)
+        public static SqlPart NotExists(Entity inTable, FilterBase where)
         {
             return new SqlPart(helper => @" NOT EXISTS (
+                        SELECT 1 FROM " + helper.Translate(inTable) + @" 
+                        WHERE " + helper.WhereToString(where, inTable) + ")");
+        }
+        public static SqlPart Exists(Entity inTable, FilterBase where)
+        {
+            return new SqlPart(helper => @" EXISTS (
                         SELECT 1 FROM " + helper.Translate(inTable) + @" 
                         WHERE " + helper.WhereToString(where, inTable) + ")");
         }
