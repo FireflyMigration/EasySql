@@ -565,6 +565,19 @@ namespace TestEasySql
                 END)"
                 );
         }
+
+        [TestMethod]
+        public void SQLWithISNull()
+        {
+            var p = new Models.Products();
+            Verify(
+                Select(p.ProductName)
+                ,
+                @"SELECT ProductName, UnitPrice * (UnitsInStock + ISNULL(UnitsOnOrder, 0))
+                FROM Products;"
+                );
+        }
+
         [TestMethod]
         public void SQLWith()
         {
