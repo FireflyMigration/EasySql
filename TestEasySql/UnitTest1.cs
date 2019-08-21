@@ -574,9 +574,80 @@ namespace TestEasySql
                 Select(p.ProductName)
                 ,
                 @"SELECT ProductName, UnitPrice * (UnitsInStock + ISNULL(UnitsOnOrder, 0))
-                FROM Products;"
+                FROM Products"
                 );
         }
+
+
+        [TestMethod]
+        public void SQLWithCastWithoutFrom()
+        {
+            var od = new Models.Order_Details();
+            Verify(
+                Select(CastAsDecimal(od.Discount,3))
+                ,
+                @"SELECT cast(discount  AS DECIMAL(9,3))
+                  FROM [Order Details]"
+                );
+        }
+
+        [TestMethod]
+        public void SQLWithCast()
+        {
+            var od = new Models.Order_Details();
+            Verify(
+                Select(CastAsDecimal(od.Discount, 3)).From(od)
+                ,
+                @"SELECT cast(discount  AS DECIMAL(9,3))
+                  FROM [Order Details]"
+                );
+        }
+        [TestMethod]
+        public void SQLWithDate()
+        {
+            var o = new Models.Orders();
+            Verify(
+                Select(o.CustomerID).Where(o.OrderDate.IsEqualTo(1996,07,04))
+                ,
+                @"SELECT CustomerID FROM Orders WHERE OrderDate='1996-07-04' "
+                );
+        }
+
+        [TestMethod]
+        public void SQLWithCastSum()
+        {
+            var od = new Models.Order_Details();
+            Verify(
+                Select(CastAsDecimal(Sum(od.Discount), 3)).From(od)
+                ,
+                @"SELECT cast(Sum(discount)  AS DECIMAL(9,3))
+                  FROM [Order Details]"
+                );
+        }
+
+        [TestMethod]
+        public void SQLWithCastAvg()
+        {
+            var od = new Models.Order_Details();
+            Verify(
+                Select(CastAsDecimal(Average(od.Discount), 3)).From(od)
+                ,
+                @"SELECT cast(avg(discount)  AS DECIMAL(9,3))
+                  FROM [Order Details]"
+                );
+        }
+        [TestMethod]
+        public void SQLWithCastRoundAvg()
+        {
+            var od = new Models.Order_Details();
+            Verify(
+                Select(CastAsDecimal(Average(Round(od.Discount,3)),3)).From(od)
+                ,
+                @"SELECT cast(avg(round(discount,3))  AS DECIMAL(9,3))
+                  FROM [Order Details]"
+                );
+        }
+
 
         [TestMethod]
         public void SQLWith()
@@ -588,7 +659,6 @@ namespace TestEasySql
                 @"SELECT CustomerId FROM Customers "
                 );
         }
-
 
         /// <summary>
         /// Loads the application ini to get a valid database connection
