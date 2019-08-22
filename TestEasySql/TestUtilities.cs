@@ -13,22 +13,19 @@ namespace TestEasySql
     public class TestUtilities
     {
       
-        public static void Verify(string resultSql, string compareSQL, params string[] moreQueries)
+        public static void Verify(ENV.Utilities.EasySql.SqlStatementKeywordBase select, string compareSQL)
         {
+            var resultSql = select.ToSql();
             System.Diagnostics.Debug.WriteLine(resultSql);
             var compare = QueryToArray(compareSQL);
             var other = new List<string>();
-            other.Add(resultSql);
-            other.AddRange(moreQueries);
-            foreach (var item in other)
+            var result = QueryToArray(resultSql);
+            result.Length.ShouldBe(compare.Length, "num of rows");
+            for (int i = 0; i < compare.Length; i++)
             {
-                var result = QueryToArray(item);
-                result.Length.ShouldBe(compare.Length, "num of rows");
-                for (int i = 0; i < compare.Length; i++)
-                {
-                    result[i].ShouldBeArray(compare[i]);
-                }
+                result[i].ShouldBeArray(compare[i]);
             }
+            
 
         }
         private static object[][] QueryToArray(string compareSQL)

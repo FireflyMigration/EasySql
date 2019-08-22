@@ -7,6 +7,7 @@ using System.Linq;
 using Firefly.Box;
 using System.Collections;
 
+
 namespace ENV.Utilities
 {
     public class Join
@@ -277,6 +278,10 @@ namespace ENV.Utilities
             {
                 return new OrderByClass(this, orderBy);
             }
+            public GroupByClass GroupBy(params SelectItem[] groupBy)
+            {
+                return new GroupByClass(this, groupBy);
+            }
         }
 
         public class FromClass : SqlStatementKeywordBase
@@ -291,6 +296,10 @@ namespace ENV.Utilities
                 var result = new FromClass(this);
                 result._joins.Add(new Join(to, where));
                 return result;
+            }
+            public GroupByClass GroupBy(params SelectItem[] groupBy)
+            {
+                return new GroupByClass(this, groupBy);
             }
             public OrderByClass OrderBy(params OrderByItem[] orderBy)
             {
@@ -478,11 +487,12 @@ namespace ENV.Utilities
                 if (original != null)
                     CopyFrom(original);
             }
-            public static implicit operator string(SqlStatementKeywordBase w)
+            public static implicit operator Func<string>(SqlStatementKeywordBase sql)
             {
-                return w.ToString();
+                return sql.ToSql;
             }
-            public override string ToString()
+
+            public string ToSql()
             {
                 return InternalBuild(new SQLPartHelper());
             }
@@ -593,10 +603,142 @@ namespace ENV.Utilities
                 }
                 return result;
             }
+
+            public void TestOn(DynamicSQLSupportingDataProvider connection)
+            {
+                var sql = ToSql();
+                var t = System.IO.Path.GetTempFileName() + ".html";
+                using (var sw = new System.IO.StreamWriter(t))
+                {
+                    sw.WriteLine(@"<style type=""text/css"" media=""screen"">
+body{
+    font-family: ""Helvetica Neue"",Helvetica,Arial,sans-serif;
+    font-size: 14px;
+    line-height: 1.42857143;
+    color: #333;
+    background-color: #fff;
+}
+table{
+    border-spacing: 0;
+    border-collapse: collapse;
+    
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    min-height: .01%;
+    overflow-x: auto;
+}
+th {
+    text-align: left;
+
+}
+.error {
+    color: black;
+    background-color: rgba(172,0,0,.1);
+    text-shadow: none;
+}
+pre{
+    color: #393A34;
+    font-family: ""Consolas"", ""Bitstream Vera Sans Mono"", ""Courier New"", Courier, monospace;
+    direction: ltr;
+    text-align: left;
+    white-space: pre;
+    word-spacing: normal;
+    word-break: normal;
+    font-size: 0.95em;
+    line-height: 1.2em;
+    -moz-tab-size: 4;
+    -o-tab-size: 4;
+    tab-size: 4;
+    -webkit-hyphens: none;
+    -moz-hyphens: none;
+    -ms-hyphens: none;
+    hyphens: none;
+    padding: 1em;
+    margin: .5em 0;
+    overflow: auto;
+    border: 1px solid #dddddd;
+    background-color: white;
+    background: #fff;
+}
+td,th{
+    padding:5px;
+    font-size:14px;
+}
+
+table tr:nth-of-type(odd) {
+    background-color: #f9f9f9;
+}
+.h1, h1 {
+    font-size: 36px;
+}
+.h1, .h2, .h3, h1, h2, h3 {
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+.h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6 {
+    font-family: inherit;
+    font-weight: 500;
+    line-height: 1.1;
+    color: inherit;
+}
+
+
+</style>");
+                    try
+                    {
+
+                        // Note that this method was called GetResult in older versions of ENV
+                        var r = connection.GetHtmlTableBasedOnSQLResultForDebugPurposes(sql);
+                        sw.WriteLine("<h2>Sql:</h2>");
+                        sw.WriteLine("<pre>" + sql + "</pre>");
+                        sw.WriteLine("<h2>Result:</h2>");
+                        sw.WriteLine(r);
+                    }
+                    catch (Exception ex)
+                    {
+                        sw.WriteLine("<h2>Sql Error:</h2>");
+                        sw.WriteLine("<pre class=\"error\">" + ex.Message + "</pre>");
+
+                        int errorLine = 0;
+                        var sqlErr = ex as System.Data.SqlClient.SqlException;
+                        if (sqlErr != null && sqlErr.Errors.Count > 0)
+                            errorLine = sqlErr.Errors[0].LineNumber;
+                        if (errorLine == 1)
+                            errorLine = 0;
+
+                        sw.WriteLine("<h2>Sql:</h2>");
+                        sw.WriteLine("<pre>");
+                        using (var sr = new System.IO.StringReader(sql))
+                        {
+                            int i = 1;
+                            string line;
+                            while ((line = sr.ReadLine()) != null)
+                            {
+                                if (errorLine == i)
+                                {
+                                    line = "<span class=\"error\">" + line + "</span>";
+                                }
+                                sw.WriteLine(line);
+                                i++;
+                            }
+                        }
+                        sw.WriteLine("</pre>");
+
+                    }
+                    finally
+                    {
+                    }
+                    sw.WriteLine("on: " + DateTime.Now.ToString());
+                }
+                Windows.OSCommand(t);
+            }
+
+
         }
+
         public class GroupByClass : SqlStatementKeywordBase
         {
-            public GroupByClass(WhereClass where, SelectItem[] columns) : base(where)
+            public GroupByClass(SqlStatementKeywordBase where, SelectItem[] columns) : base(where)
             {
                 _groupBy.AddRange(columns);
 
@@ -691,136 +833,8 @@ namespace ENV.Utilities.EasySqlExtentions
             }
             return new SqlPart(column, " ", new SqlFunction("not in", v.ToArray()));
         }
-        public static void TestSql(this DynamicSQLSupportingDataProvider connection, string sql)
-        {
-            var t = System.IO.Path.GetTempFileName() + ".html";
-            using (var sw = new System.IO.StreamWriter(t))
-            {
-                sw.WriteLine(@"<style type=""text/css"" media=""screen"">
-body{
-    font-family: ""Helvetica Neue"",Helvetica,Arial,sans-serif;
-    font-size: 14px;
-    line-height: 1.42857143;
-    color: #333;
-    background-color: #fff;
-}
-table{
-    border-spacing: 0;
-    border-collapse: collapse;
-    
-    margin-bottom: 20px;
-    border: 1px solid #ddd;
-    min-height: .01%;
-    overflow-x: auto;
-}
-th {
-    text-align: left;
 
-}
-.error {
-    color: black;
-    background-color: rgba(172,0,0,.1);
-    text-shadow: none;
-}
-pre{
-    color: #393A34;
-    font-family: ""Consolas"", ""Bitstream Vera Sans Mono"", ""Courier New"", Courier, monospace;
-    direction: ltr;
-    text-align: left;
-    white-space: pre;
-    word-spacing: normal;
-    word-break: normal;
-    font-size: 0.95em;
-    line-height: 1.2em;
-    -moz-tab-size: 4;
-    -o-tab-size: 4;
-    tab-size: 4;
-    -webkit-hyphens: none;
-    -moz-hyphens: none;
-    -ms-hyphens: none;
-    hyphens: none;
-    padding: 1em;
-    margin: .5em 0;
-    overflow: auto;
-    border: 1px solid #dddddd;
-    background-color: white;
-    background: #fff;
-}
-td,th{
-    padding:5px;
-    font-size:14px;
-}
-
-table tr:nth-of-type(odd) {
-    background-color: #f9f9f9;
-}
-.h1, h1 {
-    font-size: 36px;
-}
-.h1, .h2, .h3, h1, h2, h3 {
-    margin-top: 20px;
-    margin-bottom: 10px;
-}
-.h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6 {
-    font-family: inherit;
-    font-weight: 500;
-    line-height: 1.1;
-    color: inherit;
-}
-
-
-</style>");
-                try
-                {
-
-                    // Note that this method was called GetResult in older versions of ENV
-                    var r = connection.GetHtmlTableBasedOnSQLResultForDebugPurposes(sql);
-                    sw.WriteLine("<h2>Sql:</h2>");
-                    sw.WriteLine("<pre>"+sql+"</pre>");
-                    sw.WriteLine("<h2>Result:</h2>");
-                    sw.WriteLine(r);
-                }
-                catch (Exception ex)
-                {
-                    sw.WriteLine("<h2>Sql Error:</h2>");
-                    sw.WriteLine("<pre class=\"error\">" + ex.Message + "</pre>");
-
-                    int errorLine = 0;
-                    var sqlErr = ex as System.Data.SqlClient.SqlException;
-                    if (sqlErr != null && sqlErr.Errors.Count > 0)
-                        errorLine = sqlErr.Errors[0].LineNumber;
-                    if (errorLine == 1)
-                        errorLine = 0;
-
-                    sw.WriteLine("<h2>Sql:</h2>");
-                    sw.WriteLine("<pre>");
-                    using (var sr = new System.IO.StringReader(sql))
-                    {
-                        int i = 1;
-                        string line;
-                        while ((line = sr.ReadLine()) != null)
-                        {
-                            if (errorLine == i)
-                            {
-                                line = "<span class=\"error\">" + line + "</span>";
-                            }
-                            sw.WriteLine(line);
-                            i++;
-                        }
-                    }
-                    sw.WriteLine("</pre>");
-
-                }
-                finally
-                {
-                }
-                sw.WriteLine("on: " + DateTime.Now.ToString());
-            }
-            Windows.OSCommand(t);
-        }
 
 
     }
-
-
 }
