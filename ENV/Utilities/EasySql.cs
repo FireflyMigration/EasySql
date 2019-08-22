@@ -7,181 +7,36 @@ using System.Linq;
 using Firefly.Box;
 using System.Collections;
 
+namespace ENV.Utilities.EasySqlExtentions
+{
+    public static class EasySqlExtentionsHelper
+    {
+        public static SqlPart IsIn<T>(this TypedColumnBase<T> column, params T[] vals)
+        {
+            var v = new List<object>();
+            foreach (var item in vals)
+            {
+                v.Add(EasySql.StringValue(item));
 
+            }
+            return new SqlPart(column, " ", new SqlFunction("in", v.ToArray()));
+        }
+        public static SqlPart IsNotIn<T>(this TypedColumnBase<T> column, params T[] vals)
+        {
+            var v = new List<object>();
+            foreach (var item in vals)
+            {
+                v.Add(EasySql.StringValue(item));
+            }
+            return new SqlPart(column, " ", new SqlFunction("not in", v.ToArray()));
+        }
+    }
+}
 namespace ENV.Utilities
 {
-    public class Join
-    {
-        public Entity To;
-        public FilterBase On;
-        public bool outer;
-        public Join(Entity to, FilterBase on, bool outer = false)
-        {
-            this.outer = outer;
-            To = to;
-            On = on;
-        }
-    }
-    public interface ISqlPart
-    {
-        string Build(SQLPartHelper helper);
-    }
-    public class SqlFunction : SqlPart
-    {
 
-        public SqlFunction(string name, params object[] args) : base(name, "(", new CommaSeparated(args), ")")
-        {
-
-        }
-
-    }
-    public class SqlPart : ISqlPart
-    {
-        Func<SQLPartHelper, string> _part;
-        public SqlPart(Func<SQLPartHelper, string> part)
-        {
-            _part = part;
-        }
-        public string Build(SQLPartHelper helper)
-        {
-            return _part(helper);
-        }
-        public SqlPart(params object[] parts)
-        {
-            _part = h =>
-            {
-                var sb = "";
-                foreach (var item in parts)
-                {
-                    sb += h.Translate(item);
-                }
-                return sb;
-            };
-        }
-    }
-
-
-    public class SQLPartHelper
-    {
-        string _tab = "       ";
-        string _indentTab = "";
-        public string NewLine { get { return "\r\n" + _indentTab; } }
-        int _indent = 0;
-        internal void Indent()
-        {
-            _indent++;
-            buildIndent();
-        }
-        void buildIndent()
-        {
-            _indentTab = "";
-            for (int i = 0; i < _indent; i++)
-            {
-                _indentTab += _tab;
-            }
-        }
-        internal void UnIndent()
-        {
-            _indent--;
-            buildIndent();
-        }
-        Dictionary<Firefly.Box.Data.Entity, string> _aliases = new Dictionary<Firefly.Box.Data.Entity, string>();
-        int _aliasCount = 0;
-        public void RegisterEntities(params Entity[] entities)
-        {
-            foreach (var item in entities)
-            {
-                if (!_aliases.ContainsKey(item))
-                    _aliases.Add(item, generateAlias());
-            }
-        }
-        bool _isOracle = false;
-        public string WhereToString(FilterBase f, params Entity[] moreEntities)
-        {
-
-            RegisterEntities(moreEntities);
-
-            var x = FilterBase.GetIFilter(f, false, _aliases.Keys.ToArray());
-            var p = new NoParametersFilterItemSaver(true, _isOracle ? OracleClientEntityDataProvider.DateTimeStringFormat : SQLClientEntityDataProvider.DateTimeStringFormat, DummyDateTimeCollector.Instance);
-            var z = new SQLFilterConsumer(
-                    p,
-                    y =>
-                    {
-                        return WriteColumnWithAlias(y);
-                    }, false, new dummySqlFilterHelper(p));
-            x.AddTo(z);
-            return z.Result.ToString();
-        }
-
-        private string WriteColumnWithAlias(ColumnBase y)
-        {
-            string s = GetAliasOf(y.Entity);
-            if (!string.IsNullOrEmpty(s))
-                return s + "." + y.Name;
-
-            throw new InvalidOperationException("Only expected columns from main table or inner table");
-        }
-
-        internal string Translate(object x)
-        {
-            var f = x as FilterBase;
-            if (f != null)
-            {
-                x = this.WhereToString(f);
-            }
-            var sqlPart = x as ISqlPart;
-            if (sqlPart != null)
-            {
-                x = sqlPart.Build(this);
-            }
-            var c = x as ColumnBase;
-            if (c != null)
-            {
-                x = WriteColumnWithAlias(c);
-            }
-            var e = x as Entity;
-            if (e != null)
-            {
-                RegisterEntities(e);
-                x = e.EntityName + " " + GetAliasOf(e);
-            }
-
-            return x.ToString();
-        }
-
-        private string GetAliasOf(Firefly.Box.Data.Entity e)
-        {
-            string s;
-            if (_aliases.TryGetValue(e, out s))
-                return s;
-            return "";
-        }
-
-        internal string generateAlias()
-        {
-            return "t" + (++_aliasCount);
-        }
-    }
     public static class EasySql
     {
-
-        public static ISqlPart Or(params WhereItem[] what)
-        {
-            return new CommaSeparated(what, " or ", true);
-        }
-        public static ISqlPart And(params WhereItem[] what)
-        {
-            return new CommaSeparated(what, " and ", true) { NewLine = true };
-        }
-        public static SqlPart Not(params WhereItem[] what)
-        {
-            return new SqlFunction("not", new CommaSeparated(what, " and ", true) { NewLine = true });
-        }
-        public static SqlPart Distinct(params object[] column)
-        {
-            return new SqlPart("Distinct ", new CommaSeparated(column));
-        }
-
 
         public static SqlPart Count(object column = null)
         {
@@ -217,11 +72,21 @@ namespace ENV.Utilities
         {
             return new SqlFunction("max", column);
         }
-        internal static SqlPart StringValue(object s)
+        public static ISqlPart Or(params WhereItem[] what)
         {
-            if (s is string || s is Text)
-                return new SqlPart("'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
-            return new SqlPart(s);
+            return new CommaSeparated(what, " or ", true);
+        }
+        public static ISqlPart And(params WhereItem[] what)
+        {
+            return new CommaSeparated(what, " and ", true) { NewLine = true };
+        }
+        public static SqlPart Not(params WhereItem[] what)
+        {
+            return new SqlFunction("not", new CommaSeparated(what, " and ", true) { NewLine = true });
+        }
+        public static SqlPart Distinct(params object[] column)
+        {
+            return new SqlPart("Distinct ", new CommaSeparated(column));
         }
         public static SqlPart Like(TextColumn column, string like)
         {
@@ -232,6 +97,16 @@ namespace ENV.Utilities
             return new SqlFunction("min", column);
 
         }
+
+
+
+        internal static SqlPart StringValue(object s)
+        {
+            if (s is string || s is Text)
+                return new SqlPart("'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
+            return new SqlPart(s);
+        }
+        
         public static SqlPart NotExists(Entity inTable, FilterBase where)
         {
             return new SqlPart(helper => @" NOT EXISTS (
@@ -809,32 +684,156 @@ table tr:nth-of-type(odd) {
             return selectString;
         }
     }
-}
-namespace ENV.Utilities.EasySqlExtentions
-{
-    public static class EasySqlExtentionsHelper
+    public class Join
     {
-        public static SqlPart IsIn<T>(this TypedColumnBase<T> column, params T[] vals)
+        public Entity To;
+        public FilterBase On;
+        public bool outer;
+        public Join(Entity to, FilterBase on, bool outer = false)
         {
-            var v = new List<object>();
-            foreach (var item in vals)
-            {
-                v.Add(EasySql.StringValue(item));
-
-            }
-            return new SqlPart(column, " ", new SqlFunction("in", v.ToArray()));
+            this.outer = outer;
+            To = to;
+            On = on;
         }
-        public static SqlPart IsNotIn<T>(this TypedColumnBase<T> column, params T[] vals)
+    }
+    public interface ISqlPart
+    {
+        string Build(SQLPartHelper helper);
+    }
+    public class SqlFunction : SqlPart
+    {
+
+        public SqlFunction(string name, params object[] args) : base(name, "(", new CommaSeparated(args), ")")
         {
-            var v = new List<object>();
-            foreach (var item in vals)
-            {
-                v.Add(EasySql.StringValue(item));
-            }
-            return new SqlPart(column, " ", new SqlFunction("not in", v.ToArray()));
+
         }
 
+    }
+    public class SqlPart : ISqlPart
+    {
+        Func<SQLPartHelper, string> _part;
+        public SqlPart(Func<SQLPartHelper, string> part)
+        {
+            _part = part;
+        }
+        public string Build(SQLPartHelper helper)
+        {
+            return _part(helper);
+        }
+        public SqlPart(params object[] parts)
+        {
+            _part = h =>
+            {
+                var sb = "";
+                foreach (var item in parts)
+                {
+                    sb += h.Translate(item);
+                }
+                return sb;
+            };
+        }
+    }
 
 
+    public class SQLPartHelper
+    {
+        string _tab = "       ";
+        string _indentTab = "";
+        public string NewLine { get { return "\r\n" + _indentTab; } }
+        int _indent = 0;
+        internal void Indent()
+        {
+            _indent++;
+            buildIndent();
+        }
+        void buildIndent()
+        {
+            _indentTab = "";
+            for (int i = 0; i < _indent; i++)
+            {
+                _indentTab += _tab;
+            }
+        }
+        internal void UnIndent()
+        {
+            _indent--;
+            buildIndent();
+        }
+        Dictionary<Firefly.Box.Data.Entity, string> _aliases = new Dictionary<Firefly.Box.Data.Entity, string>();
+        int _aliasCount = 0;
+        public void RegisterEntities(params Entity[] entities)
+        {
+            foreach (var item in entities)
+            {
+                if (!_aliases.ContainsKey(item))
+                    _aliases.Add(item, generateAlias());
+            }
+        }
+        bool _isOracle = false;
+        public string WhereToString(FilterBase f, params Entity[] moreEntities)
+        {
+
+            RegisterEntities(moreEntities);
+
+            var x = FilterBase.GetIFilter(f, false, _aliases.Keys.ToArray());
+            var p = new NoParametersFilterItemSaver(true, _isOracle ? OracleClientEntityDataProvider.DateTimeStringFormat : SQLClientEntityDataProvider.DateTimeStringFormat, DummyDateTimeCollector.Instance);
+            var z = new SQLFilterConsumer(
+                    p,
+                    y =>
+                    {
+                        return WriteColumnWithAlias(y);
+                    }, false, new dummySqlFilterHelper(p));
+            x.AddTo(z);
+            return z.Result.ToString();
+        }
+
+        private string WriteColumnWithAlias(ColumnBase y)
+        {
+            string s = GetAliasOf(y.Entity);
+            if (!string.IsNullOrEmpty(s))
+                return s + "." + y.Name;
+
+            throw new InvalidOperationException("Only expected columns from main table or inner table");
+        }
+
+        internal string Translate(object x)
+        {
+            var f = x as FilterBase;
+            if (f != null)
+            {
+                x = this.WhereToString(f);
+            }
+            var sqlPart = x as ISqlPart;
+            if (sqlPart != null)
+            {
+                x = sqlPart.Build(this);
+            }
+            var c = x as ColumnBase;
+            if (c != null)
+            {
+                x = WriteColumnWithAlias(c);
+            }
+            var e = x as Entity;
+            if (e != null)
+            {
+                RegisterEntities(e);
+                x = e.EntityName + " " + GetAliasOf(e);
+            }
+
+            return x.ToString();
+        }
+
+        private string GetAliasOf(Firefly.Box.Data.Entity e)
+        {
+            string s;
+            if (_aliases.TryGetValue(e, out s))
+                return s;
+            return "";
+        }
+
+        internal string generateAlias()
+        {
+            return "t" + (++_aliasCount);
+        }
     }
 }
