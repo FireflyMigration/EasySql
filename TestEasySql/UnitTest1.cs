@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Models = Northwind.Models;
 using static TestEasySql.TestUtilities;
 using static ENV.Utilities.EasySql;
-using ENV.Utilities;
+using ENV.Utilities.EasySqlExtentions;
 using Firefly.Box;
 
 namespace TestEasySql
