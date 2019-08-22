@@ -21,6 +21,10 @@ namespace ENV.Utilities.EasySqlExtentions
             }
             return new SqlPart(column, " ", new SqlFunction("in", v.ToArray()));
         }
+        public static SqlPart IsNull(this ColumnBase column)
+        {
+            return new SqlPart(column, " is null");
+        }
         public static SqlPart IsNotIn<T>(this TypedColumnBase<T> column, params T[] vals)
         {
             var v = new List<object>();
@@ -106,7 +110,7 @@ namespace ENV.Utilities
                 return new SqlPart("'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
             return new SqlPart(s);
         }
-        
+
         public static SqlPart NotExists(Entity inTable, FilterBase where)
         {
             return new SqlPart(helper => @" NOT EXISTS (
@@ -124,8 +128,39 @@ namespace ENV.Utilities
             return new SqlFunction("cast", new SqlPart(what, " as ", new SqlFunction("decimal", 20, decimals)));
         }
 
+        public static CaseClass Case(WhereItem when, object then)
+        {
+            return new CaseClass(when, then, null);
+        }
 
+        public class CaseClass
+        {
+            WhereItem _where;
+            object _then;
+            CaseClass _parent;
+            public CaseClass(WhereItem where, object then, CaseClass parent)
+            {
+                _where = where;
+                _then = then;
+                _parent = parent;
+            }
+            public CaseClass When(WhereItem where, object then)
+            {
+                return new CaseClass(where, then, this);
+            }
 
+            SqlPart GetCase()
+            {
+                if (_parent == null)
+                    return new SqlPart("case when ", _where, " then ", StringValue(_then));
+                else
+                    return new SqlPart(_parent.GetCase(), " when ", _where, " then ", StringValue(_then));
+            }
+            public SqlPart Else(object value)
+            {
+                return new SqlPart(GetCase(), " else ", StringValue(value), " end");
+            }
+        }
 
         public static SelectClass Select(params SelectItem[] columns)
         {
@@ -180,10 +215,22 @@ namespace ENV.Utilities
             {
                 return new OrderByClass(this, orderBy);
             }
-            public FromClass OuterJoin(Entity to, FilterBase where)
+            public FromClass LeftOuterJoin(Entity to, FilterBase where)
             {
                 var result = new FromClass(this);
-                result._joins.Add(new Join(to, where, true));
+                result._joins.Add(new Join(to, where, "left outer"));
+                return result;
+            }
+            public FromClass RightOuterJoin(Entity to, FilterBase where)
+            {
+                var result = new FromClass(this);
+                result._joins.Add(new Join(to, where, "right outer"));
+                return result;
+            }
+            public FromClass FullOuterJoin(Entity to, FilterBase where)
+            {
+                var result = new FromClass(this);
+                result._joins.Add(new Join(to, where, "full outer"));
                 return result;
             }
             public WhereClass Where(params WhereItem[] filter)
@@ -434,7 +481,7 @@ namespace ENV.Utilities
                 if (_joins != null)
                     foreach (var j in _joins)
                     {
-                        theFrom += helper.NewLine + (j.outer ? " Left outer" : " Inner") + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
+                        theFrom += helper.NewLine + (j.joinType) + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
 
                     }
                 helper.UnIndent();
@@ -688,10 +735,10 @@ table tr:nth-of-type(odd) {
     {
         public Entity To;
         public FilterBase On;
-        public bool outer;
-        public Join(Entity to, FilterBase on, bool outer = false)
+        public string joinType;
+        public Join(Entity to, FilterBase on, string joinType = "inner join")
         {
-            this.outer = outer;
+            this.joinType = joinType;
             To = to;
             On = on;
         }

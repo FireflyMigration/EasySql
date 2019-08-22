@@ -43,7 +43,7 @@ namespace TestEasySql
                 c.CustomerID,c.CompanyName
             };
             Verify(
-                Select( columns, c.Phone)
+                Select(columns, c.Phone)
                 ,
                 "select customerid,companyName,phone from customers"
                 );
@@ -100,7 +100,7 @@ namespace TestEasySql
             var c = new Models.Customers();
             Verify(
                 Select(c.CustomerID).From(c).
-                Where(c.Country.IsEqualTo("Germany")).OrderBy(c.CustomerID)                
+                Where(c.Country.IsEqualTo("Germany")).OrderBy(c.CustomerID)
                 ,
                 @"SELECT CustomerID FROM Customers
                   WHERE Country='Germany' order by CustomerID asc"
@@ -113,7 +113,7 @@ namespace TestEasySql
             var c = new Models.Customers();
             Verify(
                 Select(c.CustomerID).From(c).
-                Where(c.Country.IsEqualTo("Germany")).OrderBy(c.CustomerID,SortDirection.Descending )
+                Where(c.Country.IsEqualTo("Germany")).OrderBy(c.CustomerID, SortDirection.Descending)
                 ,
                 @"SELECT CustomerID FROM Customers
                   WHERE Country='Germany' order by CustomerID Desc"
@@ -232,7 +232,7 @@ namespace TestEasySql
         [TestMethod]
         public void SQLWithLikeUsingUserDbMethods()
         {
-            
+
             var c = new Models.Customers();
             var db = new ENV.Data.UserDbMethods(() => c);
             Verify(
@@ -295,7 +295,7 @@ namespace TestEasySql
         {
             var c = new Models.Customers();
             Verify(
-                Select(c.CustomerID).Where(c.Country.IsIn("Germany","France","UK"))
+                Select(c.CustomerID).Where(c.Country.IsIn("Germany", "France", "UK"))
                 ,
                 @"SELECT CustomerID FROM Customers WHERE Country IN ('Germany', 'France', 'UK');"
                 );
@@ -415,7 +415,7 @@ namespace TestEasySql
             Verify(
                 Select(c.CompanyName, o.OrderID).
                 From(c).
-                InnerJoin(o, c.CustomerID.IsEqualTo(o.CustomerID)).
+                FullOuterJoin(o, c.CustomerID.IsEqualTo(o.CustomerID)).
                 OrderBy(c.CompanyName)
                 ,
                 @"SELECT Customers.CompanyName, Orders.OrderID
@@ -491,7 +491,7 @@ namespace TestEasySql
         {
             var c = new Models.Customers();
             Verify(
-                Select(Count(c.CustomerID),c.Country).Where().GroupBy(c.Country)/*+
+                Select(Count(c.CustomerID), c.Country).Where().GroupBy(c.Country)/*+
                 @" HAVING COUNT(t1.CustomerID) > 5"*/
                 ,
                 @"SELECT COUNT(CustomerID), Country
@@ -529,7 +529,7 @@ namespace TestEasySql
                 WHERE NOT EXISTS (SELECT ProductName FROM Products WHERE Products.ProductID = [Order Details].ProductID AND UnitPrice = 22) "
                 );
         }
- 
+
 
 
         [TestMethod]
@@ -537,7 +537,11 @@ namespace TestEasySql
         {
             var od = new Models.Order_Details();
             Verify(
-                Select(od.OrderID, od.Quantity )
+                Select(od.OrderID, od.Quantity,
+                Case(od.Quantity.IsGreaterThan(30), "The quantity is greater than 30")
+                    .When(od.Quantity.IsEqualTo(30), "The quantity is 30")
+                    .Else("The quantity is under 30"))
+
                 ,
                 @"SELECT OrderID, Quantity,
                     CASE WHEN Quantity > 30 THEN 'The quantity is greater than 30'
@@ -554,7 +558,10 @@ namespace TestEasySql
         {
             var c = new Models.Customers();
             Verify(
-                Select(c.CompanyName, c.City, c.Country).OrderBy()
+                Select(c.CompanyName,
+                c.City, c.Country).OrderBy(
+                    Case(c.City.IsNull(), c.Country).Else(c.City)
+                    )
                 ,
                 @"SELECT CompanyName, City, Country
                 FROM Customers
@@ -579,17 +586,7 @@ namespace TestEasySql
         }
 
 
-        [TestMethod]
-        public void SQLWithCastWithoutFrom()
-        {
-            var od = new Models.Order_Details();
-            Verify(
-                Select(CastAsDecimal(od.Discount,3))
-                ,
-                @"SELECT cast(discount  AS DECIMAL(9,3))
-                  FROM [Order Details]"
-                );
-        }
+        
 
         [TestMethod]
         public void SQLWithCast()
@@ -607,7 +604,7 @@ namespace TestEasySql
         {
             var o = new Models.Orders();
             Verify(
-                Select(o.CustomerID).Where(o.OrderDate.IsEqualTo(1996,07,04))
+                Select(o.CustomerID).Where(o.OrderDate.IsEqualTo(1996, 07, 04))
                 ,
                 @"SELECT CustomerID FROM Orders WHERE OrderDate='1996-07-04' "
                 );
@@ -641,7 +638,7 @@ namespace TestEasySql
         {
             var od = new Models.Order_Details();
             Verify(
-                Select(CastAsDecimal(Average(Round(od.Discount,3)),3)).From(od)
+                Select(CastAsDecimal(Average(Round(od.Discount, 3)), 3)).From(od)
                 ,
                 @"SELECT cast(avg(round(discount,3))  AS DECIMAL(9,3))
                   FROM [Order Details]"
