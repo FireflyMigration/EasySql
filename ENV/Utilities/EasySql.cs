@@ -775,6 +775,8 @@ table tr:nth-of-type(odd) {
 
                     // Note that this method was called GetResult in older versions of ENV
                     var r = connection.GetHtmlTableBasedOnSQLResultForDebugPurposes(sql);
+                    sw.WriteLine("<h2>Sql:</h2>");
+                    sw.WriteLine("<pre>"+sql+"</pre>");
                     sw.WriteLine("<h2>Result:</h2>");
                     sw.WriteLine(r);
                 }
