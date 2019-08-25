@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Firefly.Box;
 using System.Collections;
+using static ENV.Utilities.EasySql;
 
 namespace ENV.Utilities.EasySqlExtentions
 {
@@ -25,6 +26,7 @@ namespace ENV.Utilities.EasySqlExtentions
         {
             return new SqlPart(column, " is null");
         }
+
         public static SqlPart IsNotIn<T>(this TypedColumnBase<T> column, params T[] vals)
         {
             var v = new List<object>();
@@ -33,6 +35,44 @@ namespace ENV.Utilities.EasySqlExtentions
                 v.Add(EasySql.StringValue(item));
             }
             return new SqlPart(column, " ", new SqlFunction("not in", v.ToArray()));
+        }
+        /// <summary>
+        /// https://www.sqlshack.com/sql-union-overview-usage-and-examples/
+        /// </summary>
+        /// <param name="select"></param>
+        /// <returns></returns>
+        public static UnionClass Union(this CanUnion left, SqlStatementKeywordBase select)
+        {
+            return new UnionClass(left, " union ", select);
+        }
+        /// <summary>
+        /// https://www.sqlshack.com/sql-union-overview-usage-and-examples/
+        /// </summary>
+        /// <param name="select"></param>
+        /// <returns></returns>
+        public static UnionClass UnionAll(this CanUnion left, SqlStatementKeywordBase select)
+        {
+            return new UnionClass(left, " union all ", select);
+        }/// <summary>
+         /// https://www.sqlshack.com/sql-union-overview-usage-and-examples/
+         /// </summary>
+         /// <param name="select"></param>
+         /// <returns></returns>
+        public static UnionClass UnionExcept(this CanUnion left, SqlStatementKeywordBase select)
+        {
+            return new UnionClass(left, " except ", select);
+        }
+        /// <summary>
+        /// https://www.sqlshack.com/sql-union-overview-usage-and-examples/
+        /// </summary>
+        /// <param name="select"></param>
+        /// <returns></returns>
+        public static UnionClass UnionIntersect(this CanUnion left, SqlStatementKeywordBase select)
+        {
+            return new UnionClass(left, " intersect ", select);
+        }
+        public interface CanUnion
+        {
         }
     }
 }
@@ -61,8 +101,22 @@ namespace ENV.Utilities
         }
         public static SqlPart Devide(object a, object b)
         {
-            return new SqlPart(a, "/", b);
+            return new SqlPart("(", a, "/", b, ")");
         }
+        public static SqlPart Multiply(object a, object b)
+        {
+            return new SqlPart("(", a, "*", b, ")");
+        }
+        public static SqlPart Add(object a, object b)
+        {
+            return new SqlPart("(", a, "+", b, ")");
+        }
+        public static SqlPart Subtract(object a, object b)
+        {
+            return new SqlPart("(", a, "-", b, ")");
+        }
+
+
         public static SqlPart Sum(object column)
         {
             return new SqlFunction("sum", column);
@@ -75,6 +129,10 @@ namespace ENV.Utilities
         public static SqlPart Max(ColumnBase column)
         {
             return new SqlFunction("max", column);
+        }
+        public static SqlPart IfNull(object value, object valueToUseWhenNull)
+        {
+            return new SqlFunction("isnull", value, valueToUseWhenNull);
         }
         public static ISqlPart Or(params WhereItem[] what)
         {
@@ -166,8 +224,22 @@ namespace ENV.Utilities
         {
             return new SelectClass(columns);
         }
+        public class UnionClass : SqlPart
+        {
+            
+            public SqlPart OrderBy(params OrderByItem[] orderBy)
+            {
+                return new SqlPart(h => h.Translate(this) +" "+ SqlStatementKeywordBase. BuildOrderBy(h, orderBy));
+            }
 
-        public class SelectClass : SqlStatementKeywordBase
+
+            public UnionClass(params object[] parts) : base(parts)
+            {
+            }
+            
+        }
+
+        public class SelectClass : SqlStatementKeywordBase, EasySqlExtentions.EasySqlExtentionsHelper.CanUnion
         {
             public SelectClass(SelectItem[] select) : base(null)
             {
@@ -194,7 +266,7 @@ namespace ENV.Utilities
             }
         }
 
-        public class FromClass : SqlStatementKeywordBase
+        public class FromClass : SqlStatementKeywordBase, EasySqlExtentions.EasySqlExtentionsHelper.CanUnion
         {
 
             public FromClass(SqlStatementKeywordBase s) : base(s)
@@ -378,7 +450,7 @@ namespace ENV.Utilities
             }
 
         }
-        public class WhereClass : SqlStatementKeywordBase
+        public class WhereClass : SqlStatementKeywordBase, EasySqlExtentions.EasySqlExtentionsHelper.CanUnion
         {
             public WhereClass(SqlStatementKeywordBase from, WhereItem[] filter) : base(from)
             {
@@ -404,6 +476,7 @@ namespace ENV.Utilities
             internal List<WhereItem> _where = new List<WhereItem>();
             internal List<FromItem> _from = new List<FromItem>();
             internal List<Join> _joins = new List<Join>();
+            internal List<WhereItem> _having = new List<WhereItem>();
             public SqlStatementKeywordBase(SqlStatementKeywordBase original)
             {
                 if (original != null)
@@ -432,6 +505,7 @@ namespace ENV.Utilities
             {
                 return "(" + InternalBuild(helper) + ")";
             }
+
 
             private string InternalBuild(SQLPartHelper helper)
             {
@@ -497,38 +571,47 @@ namespace ENV.Utilities
                 {
                     result += helper.NewLine + "Group by " + helper.Translate(new CommaSeparated(_groupBy) { NewLine = true });
                 }
+                if (_having.Count > 0)
+                    result += helper.NewLine + "Having " + helper.Translate(And(_having.ToArray()));
 
 
                 if (_orderBy != null && _orderBy.Count > 0)
                 {
-                    var ob = "";
-                    foreach (var item in _orderBy)
-                    {
-                        if (item._item is SortDirection)
-                        {
-                            if (((SortDirection)item._item) == SortDirection.Descending)
-                                ob += " desc";
-                            continue;
-                        }
-                        if (ob.Length > 0)
-                        {
-                            ob += ", " + helper.NewLine;
-                        }
-                        else if (ob.Length == 0)
-                        {
-                            ob = helper.NewLine + "Order by ";
-                        }
-
-                        ob += helper.Translate(item);
-                    }
-                    result += ob;
+                    result += BuildOrderBy(helper,_orderBy); ;
                 }
                 return result;
             }
 
+            internal static string BuildOrderBy(SQLPartHelper helper, IEnumerable<OrderByItem> _orderBy)
+            {
+                var ob = "";
+                foreach (var item in _orderBy)
+                {
+                    if (item._item is SortDirection)
+                    {
+                        if (((SortDirection)item._item) == SortDirection.Descending)
+                            ob += " desc";
+                        continue;
+                    }
+                    if (ob.Length > 0)
+                    {
+                        ob += ", " + helper.NewLine;
+                    }
+
+
+                    ob += helper.Translate(item);
+                }
+                return  helper.NewLine + "Order by "+ob;
+                
+            }
+
             public void TestOn(DynamicSQLSupportingDataProvider connection)
             {
-                var sql = ToSql();
+                DoTest(connection, ToSql());
+            }
+            internal static void DoTest(DynamicSQLSupportingDataProvider connection, string sql)
+            {
+
                 var t = System.IO.Path.GetTempFileName() + ".html";
                 using (var sw = new System.IO.StreamWriter(t))
                 {
@@ -658,11 +741,28 @@ table tr:nth-of-type(odd) {
 
         }
 
-        public class GroupByClass : SqlStatementKeywordBase
+        public class GroupByClass : SqlStatementKeywordBase, EasySqlExtentions.EasySqlExtentionsHelper.CanUnion
         {
             public GroupByClass(SqlStatementKeywordBase where, SelectItem[] columns) : base(where)
             {
                 _groupBy.AddRange(columns);
+
+            }
+            public HavingClass Having(params WhereItem[] filter)
+            {
+                return new HavingClass(this, filter);
+            }
+
+            public OrderByClass OrderBy(params OrderByItem[] orderBy)
+            {
+                return new OrderByClass(this, orderBy);
+            }
+        }
+        public class HavingClass : SqlStatementKeywordBase, EasySqlExtentions.EasySqlExtentionsHelper.CanUnion
+        {
+            public HavingClass(GroupByClass where, WhereItem[] columns) : base(where)
+            {
+                _having.AddRange(columns);
 
             }
 
@@ -736,7 +836,7 @@ table tr:nth-of-type(odd) {
         public Entity To;
         public FilterBase On;
         public string joinType;
-        public Join(Entity to, FilterBase on, string joinType = "inner join")
+        public Join(Entity to, FilterBase on, string joinType = "inner")
         {
             this.joinType = joinType;
             To = to;
@@ -778,6 +878,19 @@ table tr:nth-of-type(odd) {
                 }
                 return sb;
             };
+        }
+
+        public string ToSql()
+        {
+            return this.Build(new SQLPartHelper());
+        }
+        public static implicit operator Func<string>(SqlPart uc)
+        {
+            return () => uc.ToSql();
+        }
+        public void TestOn(DynamicSQLSupportingDataProvider connection)
+        {
+            EasySql.SqlStatementKeywordBase.DoTest(connection, ToSql());
         }
     }
 

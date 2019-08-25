@@ -8,6 +8,7 @@ using static TestEasySql.TestUtilities;
 using static ENV.Utilities.EasySql;
 using ENV.Utilities.EasySqlExtentions;
 using Firefly.Box;
+using ENV.Utilities;
 
 namespace TestEasySql
 {
@@ -380,8 +381,8 @@ namespace TestEasySql
             var c = new Models.Customers();
             Verify(
                 Select(c.CompanyName, o.OrderID).
-                From(o).
-                InnerJoin(c, o.CustomerID.IsEqualTo(c.CustomerID)).
+                From(c).
+                LeftOuterJoin(o, o.CustomerID.IsEqualTo(c.CustomerID)).
                 OrderBy(c.CompanyName)
                 ,
                 @"SELECT Customers.CompanyName, Orders.OrderID
@@ -398,7 +399,9 @@ namespace TestEasySql
             var c = new Models.Customers();
             Verify(
                 Select(c.CompanyName, o.OrderID).
-                From(c)
+                From(c).
+                RightOuterJoin(o, o.CustomerID.IsEqualTo(c.CustomerID)).
+                OrderBy(c.CompanyName)
                 ,
                 @"SELECT Customers.CompanyName, Orders.OrderID
                   FROM Customers
@@ -431,14 +434,15 @@ namespace TestEasySql
             var o = new Models.Orders();
             var c = new Models.Customers();
             Verify(
-                Select(c.City, c.Country).Where(c.Country.IsEqualTo("Germany")) /*+ @" UNION " +
-                Select(o.ShipCity, o.ShipCountry).Where(o.ShipCountry.IsEqualTo("Germany")).OrderBy(c.City)*/
+                Select(c.City, c.Country).Where(c.Country.IsEqualTo("Germany")).Union(
+                    
+                Select(o.ShipCity, o.ShipCountry).Where(o.ShipCountry.IsEqualTo("Germany"))).OrderBy(1,SortDirection.Descending)
 
                 ,
                 @"SELECT City, Country FROM Customers WHERE Country='Germany'
                   UNION 
                   SELECT ShipCity, ShipCountry FROM orders WHERE ShipCountry='Germany'
-                  ORDER BY City;"
+                  ORDER BY City desc;"
                 );
         }
         [TestMethod]
@@ -447,9 +451,8 @@ namespace TestEasySql
             var o = new Models.Orders();
             var c = new Models.Customers();
             Verify(
-                Select(c.City, c.Country).Where(c.Country.IsEqualTo("Germany")) /*+ @" UNION ALL" +
-                Select(o.ShipCity, o.ShipCountry).Where(o.ShipCountry.IsEqualTo("Germany")).OrderBy(c.City)*/
-
+                Select(c.City, c.Country).Where(c.Country.IsEqualTo("Germany")).UnionAll(
+                Select(o.ShipCity, o.ShipCountry).Where(o.ShipCountry.IsEqualTo("Germany"))).OrderBy(c.City)
                 ,
                 @"SELECT City, Country FROM Customers WHERE Country='Germany'
                   UNION  ALL
@@ -476,7 +479,7 @@ namespace TestEasySql
         {
             var c = new Models.Customers();
             Verify(
-                Select(Count(c.CustomerID), c.Country).Where().GroupBy(c.Country)
+                Select(Count(c.CustomerID), c.Country).GroupBy(c.Country)
                 ,
                 @"SELECT COUNT(CustomerID), Country
                  FROM Customers
@@ -491,7 +494,11 @@ namespace TestEasySql
         {
             var c = new Models.Customers();
             Verify(
-                Select(Count(c.CustomerID), c.Country).Where().GroupBy(c.Country)/*+
+                Select(Count(c.CustomerID), c.Country)
+                .GroupBy(c.Country)
+                .Having(new SqlPart(Count(c.CustomerID), " > ", 5))
+
+                /*+
                 @" HAVING COUNT(t1.CustomerID) > 5"*/
                 ,
                 @"SELECT COUNT(CustomerID), Country
@@ -578,7 +585,18 @@ namespace TestEasySql
         {
             var p = new Models.Products();
             Verify(
-                Select(p.ProductName)
+                Select(p.ProductName, IfNull(p.UnitsOnOrder, 0))
+                ,
+                @"SELECT ProductName, ISNULL(UnitsOnOrder, 0)
+                FROM Products"
+                );
+        }
+        [TestMethod]
+        public void SQLWithISNull_1()
+        {
+            var p = new Models.Products();
+            Verify(
+                Select(p.ProductName, Multiply(p.UnitPrice, Add(p.UnitsInStock, IfNull(p.UnitsOnOrder, 0))))
                 ,
                 @"SELECT ProductName, UnitPrice * (UnitsInStock + ISNULL(UnitsOnOrder, 0))
                 FROM Products"
@@ -586,7 +604,8 @@ namespace TestEasySql
         }
 
 
-        
+
+
 
         [TestMethod]
         public void SQLWithCast()

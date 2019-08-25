@@ -13,12 +13,23 @@ namespace TestEasySql
     public class TestUtilities
     {
       
-        public static void Verify(ENV.Utilities.EasySql.SqlStatementKeywordBase select, string compareSQL)
+        public static void Verify(Func<string> select, string compareSQL)
         {
-            var resultSql = select.ToSql();
+
+            object[][] compare ;
+            try
+            {
+                compare = QueryToArray(compareSQL);
+            }
+            catch {
+                System.Diagnostics.Debug.WriteLine("ERROR IN COMPARE SQL!!!!");
+                System.Diagnostics.Debug.WriteLine(compareSQL);
+                throw;
+            }
+
+            
+            var resultSql = select();
             System.Diagnostics.Debug.WriteLine(resultSql);
-            var compare = QueryToArray(compareSQL);
-            var other = new List<string>();
             var result = QueryToArray(resultSql);
             result.Length.ShouldBe(compare.Length, "num of rows");
             for (int i = 0; i < compare.Length; i++)
