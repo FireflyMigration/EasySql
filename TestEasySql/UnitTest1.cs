@@ -498,8 +498,6 @@ namespace TestEasySql
                 .GroupBy(c.Country)
                 .Having(new SqlPart(Count(c.CustomerID), " > ", 5))
 
-                /*+
-                @" HAVING COUNT(t1.CustomerID) > 5"*/
                 ,
                 @"SELECT COUNT(CustomerID), Country
                 FROM Customers
@@ -507,6 +505,24 @@ namespace TestEasySql
                 HAVING COUNT(CustomerID) > 5"
                 );
         }
+        [TestMethod]
+        public void SQLWithHavingOrderBy()
+        {
+            var c = new Models.Customers();
+            Verify(
+                Select(Count(c.CustomerID), c.Country)
+                .GroupBy(c.Country)
+                .Having(new SqlPart(Count(c.CustomerID), " > ", 5))
+                .OrderBy(Count(c.CustomerID),SortDirection.Descending)
+                ,
+                @"SELECT COUNT(CustomerID), Country
+                FROM Customers
+                GROUP BY Country
+                HAVING COUNT(CustomerID) > 5
+				 ORDER BY COUNT(CustomerID) DESC"
+                );
+        }
+
         [TestMethod]
         public void SQLWithExists()
         {
