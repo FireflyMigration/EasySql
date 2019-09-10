@@ -435,8 +435,8 @@ namespace TestEasySql
             var c = new Models.Customers();
             Verify(
                 Select(c.City, c.Country).Where(c.Country.IsEqualTo("Germany")).Union(
-                    
-                Select(o.ShipCity, o.ShipCountry).Where(o.ShipCountry.IsEqualTo("Germany"))).OrderBy(1,SortDirection.Descending)
+
+                Select(o.ShipCity, o.ShipCountry).Where(o.ShipCountry.IsEqualTo("Germany"))).OrderBy(1, SortDirection.Descending)
 
                 ,
                 @"SELECT City, Country FROM Customers WHERE Country='Germany'
@@ -513,7 +513,7 @@ namespace TestEasySql
                 Select(Count(c.CustomerID), c.Country)
                 .GroupBy(c.Country)
                 .Having(new SqlPart(Count(c.CustomerID), " > ", 5))
-                .OrderBy(Count(c.CustomerID),SortDirection.Descending)
+                .OrderBy(Count(c.CustomerID), SortDirection.Descending)
                 ,
                 @"SELECT COUNT(CustomerID), Country
                 FROM Customers
@@ -681,6 +681,61 @@ namespace TestEasySql
         }
 
 
+        [TestMethod]
+        public void SQLWithLamda()
+        {
+            var u = new ENV.UserMethods();
+            var o = new Models.Orders();
+            var c = new Models.Customers();
+
+            Verify(
+                Select(o.OrderID, c.CompanyName, o.OrderDate).
+                From(o).
+                InnerJoin(c, Eq(o.CustomerID, Left(c.CustomerID, 5)))
+                ,
+                @"SELECT  Orders.OrderID, Customers.CompanyName, Orders.OrderDate
+                  FROM Orders
+                  INNER JOIN Customers ON Orders.CustomerID = left(Customers.CustomerID,5) "
+                );
+
+
+        }
+        [TestMethod]
+        public void SQLWithLamda_1()
+        {
+            var u = new ENV.UserMethods();
+            var o = new Models.Orders();
+            var c = new Models.Customers();
+
+            Verify(
+                Select(o.OrderID, c.CompanyName, o.OrderDate).
+                From(o).
+                InnerJoin(c, new SqlPart(o.CustomerID, "=", new SqlFunction("Left", c.CustomerID, 5)))
+                ,
+                @"SELECT  Orders.OrderID, Customers.CompanyName, Orders.OrderDate
+                  FROM Orders
+                  INNER JOIN Customers ON Orders.CustomerID = left(Customers.CustomerID,5) "
+                );
+
+
+        }
+
+        [TestMethod]
+        public void SQLWithHavingCount()
+        {
+            var c = new Models.Customers();
+            Verify(
+                Select(c.City)
+                .GroupBy(c.City)
+                .Having(new SqlPart(Count(), " = ", 1))
+
+                ,
+                @"select city
+                from customers
+                group by city
+                having count(*)=1"
+                );
+        }
         [TestMethod]
         public void SQLWith()
         {

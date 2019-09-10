@@ -94,6 +94,7 @@ namespace ENV.Utilities
 
         }
 
+
         public static SqlPart Average(object column)
         {
             return new SqlFunction("avg", column);
@@ -125,8 +126,17 @@ namespace ENV.Utilities
         {
             return new SqlFunction("round", column, decimals);
         }
+        public static SqlPart Eq(object left, object right)
+        {
+            return new SqlPart(left, "=", right);
 
-        public static SqlPart Max(ColumnBase column)
+        }
+        public static SqlPart Left(object what, int chars)
+        {
+            return new SqlFunction("left", what, chars);
+
+        }
+            public static SqlPart Max(ColumnBase column)
         {
             return new SqlFunction("max", column);
         }
@@ -185,6 +195,7 @@ namespace ENV.Utilities
         {
             return new SqlFunction("cast", new SqlPart(what, " as ", new SqlFunction("decimal", 20, decimals)));
         }
+
 
         public static CaseClass Case(WhereItem when, object then)
         {
@@ -273,7 +284,7 @@ namespace ENV.Utilities
             {
 
             }
-            public FromClass InnerJoin(Entity to, FilterBase where)
+            public FromClass InnerJoin(Entity to, WhereItem where)
             {
                 var result = new FromClass(this);
                 result._joins.Add(new Join(to, where));
@@ -555,7 +566,7 @@ namespace ENV.Utilities
                 if (_joins != null)
                     foreach (var j in _joins)
                     {
-                        theFrom += helper.NewLine + (j.joinType) + " join " + helper.Translate(j.To) + " on " + helper.WhereToString(j.On);
+                        theFrom += helper.NewLine + (j.joinType) + " join " + helper.Translate(j.To) + " on " + helper.Translate(j.On);
 
                     }
                 helper.UnIndent();
@@ -834,9 +845,9 @@ table tr:nth-of-type(odd) {
     public class Join
     {
         public Entity To;
-        public FilterBase On;
+        public WhereItem On;
         public string joinType;
-        public Join(Entity to, FilterBase on, string joinType = "inner")
+        public Join(Entity to, WhereItem on, string joinType = "inner")
         {
             this.joinType = joinType;
             To = to;
