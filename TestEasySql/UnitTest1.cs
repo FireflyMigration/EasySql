@@ -691,7 +691,7 @@ namespace TestEasySql
             Verify(
                 Select(o.OrderID, c.CompanyName, o.OrderDate).
                 From(o).
-                InnerJoin(c, Eq(o.CustomerID, Left(c.CustomerID, 5)))
+                InnerJoin(c, eq(o.CustomerID, Left(c.CustomerID, 5)))
                 ,
                 @"SELECT  Orders.OrderID, Customers.CompanyName, Orders.OrderDate
                   FROM Orders

@@ -126,7 +126,7 @@ namespace ENV.Utilities
         {
             return new SqlFunction("round", column, decimals);
         }
-        public static SqlPart Eq(object left, object right)
+        public static SqlPart eq(object left, object right)
         {
             return new SqlPart(left, "=", right);
 
