@@ -703,7 +703,8 @@ table tr:nth-of-type(odd) {
                     try
                     {
 
-                        // Note that this method was called GetResult in older versions of ENV
+                        // If you get a build error - try the following line instead
+                        //var r = connection.GetResult(sql);
                         var r = connection.GetHtmlTableBasedOnSQLResultForDebugPurposes(sql);
                         sw.WriteLine("<h2>Sql:</h2>");
                         sw.WriteLine("<pre>" + sql + "</pre>");
@@ -746,6 +747,8 @@ table tr:nth-of-type(odd) {
                     }
                     sw.WriteLine("on: " + DateTime.Now.ToString());
                 }
+                // If you get a build error - try the following line instead
+                // Windows.StartRun(t);
                 Windows.OSCommand(t);
             }
 
@@ -947,12 +950,16 @@ table tr:nth-of-type(odd) {
             RegisterEntities(moreEntities);
 
             var x = FilterBase.GetIFilter(f, false, _aliases.Keys.ToArray());
+            // If you get a build error - try the following line instead
+            // var p = new NoParametersFilterItemSaver();
             var p = new NoParametersFilterItemSaver(true, _isOracle ? OracleClientEntityDataProvider.DateTimeStringFormat : SQLClientEntityDataProvider.DateTimeStringFormat, DummyDateTimeCollector.Instance);
             var z = new SQLFilterConsumer(
                     p,
                     y =>
                     {
                         return WriteColumnWithAlias(y);
+                    // If you get a build error - try the following line instead
+                    //  }, false, new dummySqlFilterHelper());  
                     }, false, new dummySqlFilterHelper(p));
             x.AddTo(z);
             return z.Result.ToString();
