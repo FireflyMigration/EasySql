@@ -9,12 +9,90 @@ using static ENV.Utilities.EasySql;
 using ENV.Utilities.EasySqlExtentions;
 using Firefly.Box;
 using ENV.Utilities;
+using ENV.IO;
+using System.ComponentModel;
 
 namespace TestEasySql
 {
     [TestClass]
     public class UnitTest1
     {
+        [TestMethod]
+        public void TestBuildSql()
+        {
+            var c = new Models.Customers();
+            var y = new SqlBuilder();
+            y.RegisterEntity(c);
+            y.ToSql(c.Address).ShouldBe("dbo.Customers.Address");
+        }
+        [TestMethod]
+        public void TestBuildSql_1()
+        {
+            var c = new Models.Customers();
+            var y = new SqlBuilder();
+            y.RegisterEntity(c, "A");
+            y.ToSql(c.Address).ShouldBe("A.Address");
+        }
+
+        [TestMethod]
+        public void TestNestedIsNull()
+        {
+            var orders = new Models.Orders();
+            var orderrDetails = new Models.Order_Details();
+            var prod1 = new Models.Products();
+            var prod2 = new Models.Products();
+            var prod3 = new Models.Products();
+            var tga = prod3.ProductName;
+            string theRestOfTheQuery(string columnSql)
+            {
+                return $@"select 1,{columnSql} from {orders.EntityName} 
+B inner join {orderrDetails.EntityName} A on A.{orderrDetails.OrderID.Name}=B.{orders.OrderID.Name}";
+            }
+            var sql = new SqlBuilder();
+            sql.RegisterEntity(orderrDetails, "A");
+            sql.RegisterEntity(orders, "B");
+            sql.RegisterEntity(prod1, "J");
+            sql.RegisterEntity(prod2, "J");
+            sql.RegisterEntity(prod3, "J");
+
+            Verify(() => theRestOfTheQuery(sql.ToSql(orders.ShipAddress,"+",
+                IsNull(
+                    Select(prod1.ProductName)
+                        .Where(prod1.ProductID.IsEqualTo(orderrDetails.ProductID).And(
+                            prod1.CategoryID.IsEqualTo(1))),
+                IsNull(
+                    Select(prod2.ProductName)
+                    .Where(prod2.ProductID.IsEqualTo(orderrDetails.ProductID).And(
+                        prod2.CategoryID.IsEqualTo(1))),
+                IsNull(
+                    Select(tga)
+                    .Where(prod3.ProductID.IsEqualTo(orderrDetails.ProductID))
+                    , StringValue(""))))
+                )),
+              theRestOfTheQuery($@"B.{orders.ShipAddress.Name} +
+isNull((
+    select {prod1.ProductName.Name} 
+      from {prod1.EntityName} J 
+     where J.{prod1.ProductID.Name}=A.{orderrDetails.ProductID.Name}
+       and {FilterHelper.ToSQLWhere(prod1.CategoryID.IsEqualTo(1), false, orderrDetails, prod1)}
+    ),
+isNull((
+    select {prod2.ProductName.Name} 
+      from {prod2.EntityName} J
+     where J.{prod2.ProductID.Name}=A.{orderrDetails.ProductID.Name}
+       and {FilterHelper.ToSQLWhere((prod2.CategoryID.IsEqualTo(1)), false, orderrDetails, prod2)}
+),
+isNull((
+select {tga.Name} 
+  from {prod3.EntityName} J
+ where J.{prod3.ProductID.Name}=A.{orderrDetails.ProductID.Name}
+),'')
+)
+)"));
+
+
+        }
+
         [TestMethod]
         public void BasicSelectStatement()
         {
@@ -327,7 +405,7 @@ namespace TestEasySql
         {
             var c = new Models.Customers();
             Verify(
-                Select(c.Country).From(Select(Distinct(c.Country)).From(c))
+                Select(new SqlPart("Country")).From(Select(Distinct(c.Country)).From(c))
                 ,
                 @"SELECT Country AS DistinctCountries FROM (SELECT DISTINCT Country FROM Customers) x"
                 );

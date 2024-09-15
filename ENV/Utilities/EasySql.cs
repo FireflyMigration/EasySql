@@ -136,11 +136,15 @@ namespace ENV.Utilities
             return new SqlFunction("left", what, chars);
 
         }
-            public static SqlPart Max(ColumnBase column)
+        public static SqlPart Max(ColumnBase column)
         {
             return new SqlFunction("max", column);
         }
         public static SqlPart IfNull(object value, object valueToUseWhenNull)
+        {
+            return IsNull(value, value);
+        }
+        public static SqlPart IsNull(object value, object valueToUseWhenNull)
         {
             return new SqlFunction("isnull", value, valueToUseWhenNull);
         }
@@ -172,7 +176,7 @@ namespace ENV.Utilities
 
 
 
-        internal static SqlPart StringValue(object s)
+        public static SqlPart StringValue(object s)
         {
             if (s is string || s is Text)
                 return new SqlPart("'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
@@ -237,17 +241,17 @@ namespace ENV.Utilities
         }
         public class UnionClass : SqlPart
         {
-            
+
             public SqlPart OrderBy(params OrderByItem[] orderBy)
             {
-                return new SqlPart(h => h.Translate(this) +" "+ SqlStatementKeywordBase. BuildOrderBy(h, orderBy));
+                return new SqlPart(h => h.Translate(this) + " " + SqlStatementKeywordBase.BuildOrderBy(h, orderBy));
             }
 
 
             public UnionClass(params object[] parts) : base(parts)
             {
             }
-            
+
         }
 
         public class SelectClass : SqlStatementKeywordBase, EasySqlExtentions.EasySqlExtentionsHelper.CanUnion
@@ -335,7 +339,7 @@ namespace ENV.Utilities
             {
                 _item = item;
             }
-            public string Build(SQLPartHelper helper)
+            public string Build(SqlBuilder helper)
             {
                 return helper.Translate(_item);
             }
@@ -366,14 +370,14 @@ namespace ENV.Utilities
 
             }
 
-            internal void RegisterEntity(SQLPartHelper helper)
+            internal void RegisterEntity(SqlBuilder helper)
             {
                 var e = _what as Firefly.Box.Data.Entity;
                 if (e != null)
                     helper.RegisterEntities(e);
             }
 
-            public string Build(SQLPartHelper helper)
+            public string Build(SqlBuilder helper)
             {
                 return helper.Translate(_what);
             }
@@ -387,7 +391,7 @@ namespace ENV.Utilities
             {
                 _item = item;
             }
-            public string Build(SQLPartHelper helper)
+            public string Build(SqlBuilder helper)
             {
                 return helper.Translate(_item);
             }
@@ -439,7 +443,7 @@ namespace ENV.Utilities
             {
                 _item = item;
             }
-            public string Build(SQLPartHelper helper)
+            public string Build(SqlBuilder helper)
             {
                 return helper.Translate(_item);
             }
@@ -500,7 +504,7 @@ namespace ENV.Utilities
 
             public string ToSql()
             {
-                return InternalBuild(new SQLPartHelper());
+                return InternalBuild(new SqlBuilder());
             }
             protected void CopyFrom(SqlStatementKeywordBase b)
             {
@@ -508,17 +512,18 @@ namespace ENV.Utilities
                 _where.AddRange(b._where);
                 _groupBy.AddRange(b._groupBy);
                 _orderBy.AddRange(b._orderBy);
+                _having.AddRange(b._having);
                 _from.AddRange(b._from);
                 _joins.AddRange(b._joins);
             }
 
-            public string Build(SQLPartHelper helper)
+            public string Build(SqlBuilder helper)
             {
                 return "(" + InternalBuild(helper) + ")";
             }
 
 
-            private string InternalBuild(SQLPartHelper helper)
+            private string InternalBuild(SqlBuilder helper)
             {
                 if (_from.Count == 0)
                 {
@@ -588,12 +593,12 @@ namespace ENV.Utilities
 
                 if (_orderBy != null && _orderBy.Count > 0)
                 {
-                    result += BuildOrderBy(helper,_orderBy); ;
+                    result += BuildOrderBy(helper, _orderBy); ;
                 }
                 return result;
             }
 
-            internal static string BuildOrderBy(SQLPartHelper helper, IEnumerable<OrderByItem> _orderBy)
+            internal static string BuildOrderBy(SqlBuilder helper, IEnumerable<OrderByItem> _orderBy)
             {
                 var ob = "";
                 foreach (var item in _orderBy)
@@ -612,8 +617,8 @@ namespace ENV.Utilities
 
                     ob += helper.Translate(item);
                 }
-                return  helper.NewLine + "Order by "+ob;
-                
+                return helper.NewLine + "Order by " + ob;
+
             }
 
             public void TestOn(DynamicSQLSupportingDataProvider connection)
@@ -806,7 +811,7 @@ table tr:nth-of-type(odd) {
             _addParenthesis = addParenthesis;
         }
 
-        public string Build(SQLPartHelper helper)
+        public string Build(SqlBuilder helper)
         {
             helper.Indent();
             var selectString = "";
@@ -859,7 +864,7 @@ table tr:nth-of-type(odd) {
     }
     public interface ISqlPart
     {
-        string Build(SQLPartHelper helper);
+        string Build(SqlBuilder helper);
     }
     public class SqlFunction : SqlPart
     {
@@ -872,12 +877,12 @@ table tr:nth-of-type(odd) {
     }
     public class SqlPart : ISqlPart
     {
-        Func<SQLPartHelper, string> _part;
-        public SqlPart(Func<SQLPartHelper, string> part)
+        Func<SqlBuilder, string> _part;
+        public SqlPart(Func<SqlBuilder, string> part)
         {
             _part = part;
         }
-        public string Build(SQLPartHelper helper)
+        public string Build(SqlBuilder helper)
         {
             return _part(helper);
         }
@@ -896,7 +901,7 @@ table tr:nth-of-type(odd) {
 
         public string ToSql()
         {
-            return this.Build(new SQLPartHelper());
+            return this.Build(new SqlBuilder());
         }
         public static implicit operator Func<string>(SqlPart uc)
         {
@@ -909,7 +914,7 @@ table tr:nth-of-type(odd) {
     }
 
 
-    public class SQLPartHelper
+    public class SqlBuilder
     {
         string _tab = "       ";
         string _indentTab = "";
@@ -943,8 +948,14 @@ table tr:nth-of-type(odd) {
                     _aliases.Add(item, generateAlias());
             }
         }
+        public void RegisterEntity(Firefly.Box.Data.Entity entity, string alias = null)
+        {
+            if (alias == null)
+                alias = entity.EntityName;
+            _aliases[entity] = alias;
+        }
         bool _isOracle = false;
-        public string WhereToString(FilterBase f, params Entity[] moreEntities)
+        internal string WhereToString(FilterBase f, params Entity[] moreEntities)
         {
 
             RegisterEntities(moreEntities);
@@ -958,8 +969,8 @@ table tr:nth-of-type(odd) {
                     y =>
                     {
                         return WriteColumnWithAlias(y);
-                    // If you get a build error - try the following line instead
-                    //  }, false, new dummySqlFilterHelper());  
+                        // If you get a build error - try the following line instead
+                        //  }, false, new dummySqlFilterHelper());  
                     }, false, new dummySqlFilterHelper(p));
             x.AddTo(z);
             return z.Result.ToString();
@@ -972,6 +983,15 @@ table tr:nth-of-type(odd) {
                 return s + "." + y.Name;
 
             throw new InvalidOperationException("Only expected columns from main table or inner table");
+        }
+        public string ToSql(params object[] parts)
+        {
+            var sb = "";
+            foreach (var item in parts)
+            {
+                sb += this.Translate(item);
+            }
+            return sb;
         }
 
         internal string Translate(object x)
