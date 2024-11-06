@@ -11,6 +11,8 @@ using Firefly.Box;
 using ENV.Utilities;
 using ENV.IO;
 using System.ComponentModel;
+using ENV.Data;
+using Firefly.Box.Advanced;
 
 namespace TestEasySql
 {
@@ -33,6 +35,17 @@ namespace TestEasySql
             y.RegisterEntity(c, "A");
             y.ToSql(c.Address).ShouldBe("A.Address");
         }
+        [TestMethod]
+        public void TestLocalColumn()
+        {
+            var c = new Models.Customers();
+            var y = new SqlBuilder();
+            y.ToSql(new TextColumn { Value = "A" }).ShouldBe("'A'");
+            y.ToSql(new NumberColumn { Value = 1 }).ShouldBe("1");
+            y.ToSql(new BoolColumn { Value = true }).ShouldBe("1");
+            y.ToSql(c.PostalCode).ShouldBe("''");
+
+        }
 
         [TestMethod]
         public void TestNestedIsNull()
@@ -48,9 +61,12 @@ namespace TestEasySql
                 return $@"select 1,{columnSql} from {orders.EntityName} 
 B inner join {orderrDetails.EntityName} A on A.{orderrDetails.OrderID.Name}=B.{orders.OrderID.Name}";
             }
-            var sql = new SqlBuilder();
-            sql.RegisterEntity(orderrDetails, "A");
-            sql.RegisterEntity(orders, "B");
+            var bp = new BusinessProcess();
+            var rel = bp.Relations;
+            rel.Add(orders, RelationType.Join);
+            var sql = new SqlBuilder(orderrDetails,rel);
+            //sql.RegisterEntity(orderrDetails, "A");
+            //sql.RegisterEntity(orders, "B");
             sql.RegisterEntity(prod1, "J");
             sql.RegisterEntity(prod2, "J");
             sql.RegisterEntity(prod3, "J");

@@ -7,6 +7,8 @@ using System.Linq;
 using Firefly.Box;
 using System.Collections;
 using static ENV.Utilities.EasySql;
+using System.Diagnostics.Eventing.Reader;
+using Firefly.Box.Advanced;
 
 namespace ENV.Utilities.EasySqlExtentions
 {
@@ -174,13 +176,26 @@ namespace ENV.Utilities
 
         }
 
-
+        public static SqlPart Parentheses(params object[] s)
+        {
+            return new SqlPart("(", new SqlPart(s), ")");
+        }
 
         public static SqlPart StringValue(object s)
         {
+            if (!(s is string || s is Text))
+                s = s.ToString();
+            return new SqlPart("'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
+        }
+        public static SqlPart Value(object s)
+        {
             if (s is string || s is Text)
-                return new SqlPart("'" + s.ToString().TrimEnd().Replace("'", "''") + "'");
-            return new SqlPart(s);
+                return StringValue(s);
+            if (Number.TryCast(s, out var n))
+                return new SqlPart(n.ToString());
+            if (Bool.TryCast(s, out var b))
+                return new SqlPart(b ? "1" : "0");
+            throw new NotSupportedException("Value " + s + " is not yet supported");
         }
 
         public static SqlPart NotExists(Entity inTable, FilterBase where)
@@ -225,13 +240,20 @@ namespace ENV.Utilities
             SqlPart GetCase()
             {
                 if (_parent == null)
-                    return new SqlPart("case when ", _where, " then ", StringValue(_then));
+                    return new SqlPart("case when ", _where, " then ", ColumnOrValue(_then));
                 else
-                    return new SqlPart(_parent.GetCase(), " when ", _where, " then ", StringValue(_then));
+                    return new SqlPart(_parent.GetCase(), " when ", _where, " then ", ColumnOrValue(_then));
             }
             public SqlPart Else(object value)
             {
-                return new SqlPart(GetCase(), " else ", StringValue(value), " end");
+                return new SqlPart(GetCase(), " else ", ColumnOrValue(value), " end");
+            }
+            public SqlPart ColumnOrValue(object o)
+            {
+                if (o is ColumnBase)
+                    return new SqlPart(o);
+                return Value(o);
+
             }
         }
 
@@ -918,6 +940,20 @@ table tr:nth-of-type(odd) {
     {
         string _tab = "       ";
         string _indentTab = "";
+        public SqlBuilder() { }
+
+        public SqlBuilder(Entity from, RelationCollection relations)
+        {
+            var alias = (int)'A';
+            RegisterEntity(from, ((char)alias).ToString());
+            var i = 1;
+            foreach (var r in relations)
+            {
+                if (r.Type == RelationType.Join || r.Type == RelationType.OuterJoin)
+                    RegisterEntity(r.From, ((char)(alias + i++)).ToString());
+            }
+
+        }
         public string NewLine { get { return "\r\n" + _indentTab; } }
         int _indent = 0;
         internal void Indent()
@@ -1009,7 +1045,10 @@ table tr:nth-of-type(odd) {
             var c = x as ColumnBase;
             if (c != null)
             {
-                x = WriteColumnWithAlias(c);
+                if (c.Entity == null || !_aliases.ContainsKey(c.Entity))
+                    x = Translate(Value(c.Value));
+                else
+                    x = WriteColumnWithAlias(c);
             }
             var e = x as Entity;
             if (e != null)
